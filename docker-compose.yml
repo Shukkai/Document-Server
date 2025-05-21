@@ -1,0 +1,36 @@
+version: '3.9'
+
+services:
+  mysql:
+    image: mysql:8
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: cloud_docs
+      MYSQL_USER: flaskuser
+      MYSQL_PASSWORD: flaskpass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  backend:
+    build: ./backend
+    container_name: flask-backend
+    ports:
+      - "5001:5001"
+    environment:
+      DATABASE_URL: "mysql+pymysql://flaskuser:flaskpass@mysql/cloud_docs"
+    depends_on:
+      - mysql
+
+  frontend:
+    build: ./frontend
+    container_name: vue-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:
