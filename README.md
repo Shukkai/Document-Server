@@ -29,25 +29,7 @@ Document Center is a full-stack web application that allows users to upload, man
 - Uses a persistent volume for file and schema durability
 - Automatically initialized by the backend on startup
 
-## Project Structure
-Document-Center/
-├── backend/               # Flask application
-│   ├── app.py
-│   ├── config.py
-│   ├── models.py
-│   ├── requirements.txt
-│   └── Dockerfile
-├── frontend/              # Vue 3 application
-│   ├── src/
-│   ├── index.html
-│   ├── package.json
-│   └── Dockerfile
-├── k8s/                   # Kubernetes manifests
-│   ├── mysql-deployment.yaml
-│   ├── backend-deployment.yaml
-│   └── frontend-deployment.yaml
-├── docker-compose.yml
-└── README.md
+
 ## Getting Started
 
 ### Prerequisites
