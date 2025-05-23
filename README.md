@@ -1,57 +1,56 @@
-# Document-Server
+# Document Center
 
-Document Center is a full-stack web application that allows users to upload, manage, and download various file types, including images and documents. It is built with a Vue.js frontend, a Flask backend, and a MySQL database, all containerized via Docker and deployable on Kubernetes (K3d).
+**Document Center** is a full-stack web application that allows users to upload, manage, download, and securely modify files. It is built with a Vue 3 frontend, Flask backend, and MySQL database. The entire stack runs in Docker using Docker Compose for local development.
+
+---
 
 ## Features
 
-### Deployment
-- Docker Compose support for local development
-- Kubernetes manifests for K3d deployment
-- Production-ready Dockerfiles for frontend and backend
-- Optional load balancer and service discovery via Ingress
+### Authentication
+- User registration and login with session support
+- Password reset via email token
+- Change password while logged in
 
-### Backend (Flask)
-- RESTful API to upload, list, and download files
-- Stores file metadata (filename, mimetype, path, timestamp)
-- Configurable MySQL database connection
-- Supports all common file types (images, documents, etc.)
-- Secure and minimal service container
+### File Management
+- Upload, list, and download files
+- Files are scoped per user
+- Stores filename, mimetype, path, and upload time
+- File size limit enforcement (default: 256 MB)
 
 ### Frontend (Vue 3 + Vite)
-- Modern UI for uploading and listing files
-- Download support with dynamic file links
+- Upload and download interface with dynamic links
+- Password reset prompt
 - Axios integration with backend API
-- Responsive layout with navigation header
-- Dockerized with Nginx for production
+- Responsive layout with a simple navigation bar
+
+### Backend (Flask)
+- RESTful API using Flask and Flask-Login
+- File upload handling with `werkzeug`
+- Token-based password reset support
+- MySQL integration using SQLAlchemy
+- CORS support with credentials
 
 ### Database (MySQL 8)
-- Runs in Docker with environment configuration
-- Uses a persistent volume for file and schema durability
-- Automatically initialized by the backend on startup
+- Runs in Docker with persistent volume for data
+- Auto-initialized by the backend
 
+---
 
 ## Getting Started
 
 ### Prerequisites
-- Docker and Docker Compose
-- (Optional) `k3d` and `kubectl` for Kubernetes setup
 
-### Running Locally (Docker Compose)
+- [Docker](https://www.docker.com/)
+- [Docker Compose](https://docs.docker.com/compose/)
 
-    1. Build and start services:
-    docker-compose up --build
-	2.	Access the application:
-	•	Frontend: http://localhost:5173
-	•	Backend API: http://localhost:5001
+### Running Locally
 
-Running on K3d (Kubernetes)
-	1.	Create a local Kubernetes cluster:
-    k3d cluster create doc-center --agents 2 --port "5173:80@loadbalancer"
-    2.	Build and import Docker images:
-    docker build -t doccenter-backend ./backend
-    docker build -t doccenter-frontend ./frontend
-    k3d image import doccenter-backend doccenter-frontend -c doc-center
-    3.	Apply Kubernetes manifests:
-    kubectl apply -f k8s/
-    4.	Access via:
-	•	http://localhost:5173
+1. Build and start the services:
+
+```bash
+docker-compose up --build
+```
+2.	Access the application:
+
+•	Frontend: http://localhost:5173
+•	Backend: http://localhost:5001
