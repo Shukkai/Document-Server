@@ -8,7 +8,16 @@
     <ul class="file-list">
       <li v-for="f in files" :key="f.id">
         <span class="fname">{{ f.name || '(no-name)' }}</span>
-        <a :href="`${axios.defaults.baseURL}/download/${f.id}`" target="_blank">Download</a>
+        <div class="actions-inline">
+          <a
+            :href="`${axios.defaults.baseURL}/download/${f.id}`"
+            target="_blank"
+            class="download"
+          >
+            Download
+          </a>
+          <button class="delete" @click="deleteFile(f.id)">Delete</button>
+        </div>
       </li>
     </ul>
 
@@ -56,10 +65,22 @@ async function loadFiles () {
   } catch (err) { handleErr(err) }
 }
 
+async function deleteFile(fileId) {
+  if (!confirm('Are you sure you want to delete this file?')) return
+  try {
+    await axios.delete(`/delete/${fileId}`, { withCredentials: true })
+    await loadFiles()
+    successMessage.value = 'File deleted.'
+  } catch (err) {
+    handleErr(err)
+  }
+}
+
 async function logout () {
   await axios.post('/logout', {}, { withCredentials:true })
   sessionCache.value = false   // clear cache
   router.push('/')
+  clearMessages()
 }
 
 async function changePassword () {

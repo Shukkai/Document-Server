@@ -78,6 +78,22 @@ def download_file(file_id):
         return {"error": "Access denied"}, 403
     return send_from_directory(app.config['UPLOAD_FOLDER'], f.filename)
 
+@app.route('/delete/<int:file_id>', methods=['DELETE'])
+@login_required
+def delete_file(file_id):
+    f = File.query.get_or_404(file_id)
+    if f.owner_id != current_user.id and not current_user.is_admin:
+        return {"error": "Access denied"}, 403
+
+    try:
+        os.remove(f.path)
+    except FileNotFoundError:
+        pass
+
+    db.session.delete(f)
+    db.session.commit()
+    return {"message": "File deleted successfully"}, 200
+
 # ──────────────── Auth endpoints ──────────────────────────────
 @app.route('/register', methods=['POST'])
 def register():
