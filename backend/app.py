@@ -67,7 +67,15 @@ def upload_file():
 @login_required
 def list_files():
     files = File.query.filter_by(owner_id=current_user.id).all()
-    return jsonify([{"id": f.id, "name": f.filename} for f in files])
+    return jsonify([
+        {
+            "id": f.id,
+            "name": f.filename,
+            "mimetype": f.mimetype,
+            "uploaded_at": f.uploaded_at.isoformat()
+        }
+        for f in files
+    ])
 
 
 @app.route('/download/<int:file_id>')
