@@ -16,5 +16,9 @@ COPY . .
 # Expose Flask port
 EXPOSE 5001
 
+# Set Flask environment variables
+ENV FLASK_APP=app.py
+ENV FLASK_ENV=production
+
 # Run the Flask app
 CMD ["python", "app.py"]

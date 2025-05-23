@@ -3,3 +3,6 @@ Flask-SQLAlchemy
 pymysql
 Flask-CORS
 cryptography
+flask_login
+passlib
+bcrypt

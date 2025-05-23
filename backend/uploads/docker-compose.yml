@@ -13,22 +13,14 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
 
   backend:
-    build:
-      context: ./backend
-    volumes:
-      - ./backend:/app
+    build: ./backend
+    container_name: flask-backend
     ports:
       - "5001:5001"
     environment:
-      - DATABASE_URL=mysql+pymysql://flaskuser:flaskpass@mysql/cloud_docs
-      - SECRET_KEY=dev-key
+      DATABASE_URL: "mysql+pymysql://flaskuser:flaskpass@mysql/cloud_docs"
     depends_on:
       - mysql
 
@@ -36,7 +28,7 @@ services:
     build: ./frontend
     container_name: vue-frontend
     ports:
-      - "8080:80"
+      - "5173:80"
     depends_on:
       - backend
 
