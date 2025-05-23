@@ -5,3 +5,7 @@
 
 # Python virtual environments
 **/venv/
+
+
+cookies.txt
+**uploads/

@@ -5,6 +5,7 @@ import { ref } from 'vue'
 import LoginView    from '@/views/Login.vue'
 import RegisterView from '@/views/Register.vue'
 import FilesView    from '@/views/Files.vue'
+import ResetPasswordView from '@/views/ResetPassword.vue'
 
 /* -------- simple in‑memory session cache ------------------ */
 export const sessionCache = ref(null)          // null = unknown
@@ -24,6 +25,7 @@ const routes = [
   { path: '/',          name:'Login',    component: LoginView },
   { path: '/register',  name:'Register', component: RegisterView },
   { path: '/files',     name:'Files',    component: FilesView },
+  { path: '/reset-password/:token', name: 'ResetPassword', component: ResetPasswordView },
   { path: '/login', redirect:'/' }     // alias
 ]
 
