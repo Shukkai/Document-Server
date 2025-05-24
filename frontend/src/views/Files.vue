@@ -1,20 +1,23 @@
+<!-- src/views/Files.vue -->
 <template>
   <div class="files-container">
     <h1>Your files</h1>
 
-    <!-- upload -------------------------------------------------------------->
+    <!-- ───────────── Upload ───────────── -->
     <input type="file" @change="onFileChange" />
     <button :disabled="!selectedFile" @click="upload">Upload</button>
 
-    <!-- folders / files ----------------------------------------------------->
+    <!-- ───────────── Folders / files ───────────── -->
     <section class="folder-section">
       <h2>Folders</h2>
 
-      <!-- recursive tree component -->
+      <!-- recursive tree -->
       <FolderTree
         :folders="folders"
+        :flat-folders="flat"
         @delete-folder="deleteFolder"
         @delete-file="deleteFile"
+        @move-file="moveFile"
       />
 
       <!-- create folder -->
@@ -22,58 +25,62 @@
       <button @click="createFolder">Create Folder</button>
     </section>
 
-    <!-- account actions ----------------------------------------------------->
+    <!-- ───────────── Account actions ───────────── -->
     <div class="actions">
       <button class="change-password" @click="changePassword">Change Password</button>
-      <button class="logout" @click="logout">Logout</button>
+      <button class="logout"          @click="logout">Logout</button>
     </div>
 
-    <!-- flash messages ------------------------------------------------------>
+    <!-- flash messages -->
     <p v-if="errorMessage"   class="error"  >{{ errorMessage }}</p>
     <p v-if="successMessage" class="success">{{ successMessage }}</p>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted }      from 'vue'
-import axios                   from 'axios'
-import { useRouter }           from 'vue-router'
-import { sessionCache }        from '@/router'
-import FolderTree              from '@/components/FolderTree.vue'
+import { ref, onMounted }  from 'vue'
+import axios               from 'axios'
+import { useRouter }       from 'vue-router'
+import { sessionCache }    from '@/router'
+import FolderTree          from '@/components/FolderTree.vue'
 
-/* ------------------------------------------------------------------- state */
-const folders        = ref([])       // ← array consumed by FolderTree
+/* ---------------------------------------------------------------- state */
+const folders        = ref([])   // nested tree
+const flat           = ref([])   // flat list for <select>
 const selectedFile   = ref(null)
 const newFolderName  = ref('')
 const errorMessage   = ref('')
 const successMessage = ref('')
 const router         = useRouter()
 
-/* ------------------------------------------------------------------- utils */
+/* -------------------------------------------------------------- helpers */
+function flash (msg, kind = 'success') {
+  if (kind === 'success') successMessage.value = msg
+  else                    errorMessage.value   = msg
+  setTimeout(() => { successMessage.value = errorMessage.value = '' }, 5000)
+}
 function onFileChange (e) { selectedFile.value = e.target.files[0] }
 
-function flash (msg, type = 'success') {
-  successMessage.value = type === 'success' ? msg : ''
-  errorMessage.value   = type === 'error'   ? msg : ''
-  setTimeout(() => { successMessage.value = errorMessage.value = '' }, 5_000)
-}
-
-/* ------------------------------------------------------------------- CRUD */
+/* -------------------------------------------------------------- load tree */
 async function loadFolders () {
-  try {
-    const { data }   = await axios.get('/folders', { withCredentials:true })
-    folders.value    = Array.isArray(data) ? data : [data]   // ✅ wrap root
-  } catch (err) { handleErr(err) }
+  const { data } = await axios.get('/folders', { withCredentials:true })
+  const root     = Array.isArray(data) ? data : [data]   // ensure array
+  folders.value  = root
+  // flat list for dropdown:
+  flat.value     = []
+  function walk(n){ flat.value.push({id:n.id, name:n.name}); n.children?.forEach(walk) }
+  root.forEach(walk)
 }
 
+/* -------------------------------------------------------------- actions */
 async function upload () {
   if (!selectedFile.value) return
-  const fd = new FormData();  fd.append('file', selectedFile.value)
+  const fd = new FormData(); fd.append('file', selectedFile.value)
   try {
     await axios.post('/upload', fd, { withCredentials:true })
     await loadFolders()
     selectedFile.value = null
-    flash('File uploaded successfully')
+    flash('File uploaded')
   } catch (err) { handleErr(err) }
 }
 
@@ -88,56 +95,52 @@ async function createFolder () {
 }
 
 async function deleteFolder (id) {
-  try {
-    await axios.delete(`/folders/${id}`, { withCredentials:true })
-    await loadFolders()
-    flash('Folder deleted')
-  } catch (err) { handleErr(err) }
+  try { await axios.delete(`/folders/${id}`, { withCredentials:true }); await loadFolders(); flash('Folder deleted') }
+  catch (err) { handleErr(err) }
 }
 
 async function deleteFile (id) {
+  try { await axios.delete(`/delete/${id}`, { withCredentials:true }); await loadFolders(); flash('File deleted') }
+  catch (err) { handleErr(err) }
+}
+
+async function moveFile ({ id, target }) {
   try {
-    await axios.delete(`/delete/${id}`, { withCredentials:true })
+    await axios.post('/move-file', { file_id:id, target_folder_id:target }, { withCredentials:true })
     await loadFolders()
-    flash('File deleted')
+    flash('File moved')
   } catch (err) { handleErr(err) }
 }
 
-/* --------------------------------------------------------- account actions */
+/* -------------------------------------------------------------- account */
 async function changePassword () {
-  const cur = prompt('Current password:')
-  if (!cur) return
-  const neu = prompt('New password (min 6 chars):')
-  if (!neu) return
-  try {
-    await axios.post('/change-password', { current_password:cur, new_password:neu }, { withCredentials:true })
-    flash('Password changed')
-  } catch (err) { handleErr(err) }
+  const cur = prompt('Current password:'); if (!cur) return
+  const neu = prompt('New password (min 6 chars):'); if (!neu) return
+  try { await axios.post('/change-password', { current_password:cur, new_password:neu }, { withCredentials:true }); flash('Password changed') }
+  catch (err) { handleErr(err) }
 }
-
 async function logout () {
   await axios.post('/logout', {}, { withCredentials:true })
   sessionCache.value = false
   router.push('/')
 }
 
-/* ---------------------------------------------------------------- handlers */
+/* -------------------------------------------------------------- error */
 function handleErr (err) {
   if (err.response?.status === 401) return router.push('/')
-  if (err.response?.status === 413) return flash('File exceeds 25 MB limit', 'error')
+  if (err.response?.status === 413) return flash('File exceeds 25 MB limit','error')
   flash(err.response?.data?.error || 'Error', 'error')
 }
 
-/* ------------------------------------------------------------------- init */
 onMounted(loadFolders)
 </script>
 
 <style scoped>
-.files-container { max-width:640px; margin:2rem auto }
+.files-container { max-width:650px; margin:2rem auto }
 .folder-section  { margin-top:2rem }
 .actions         { display:flex; gap:.5rem; margin-top:1.5rem }
 
-.logout, .change-password, .delete {
+.logout, .change-password {
   border:none; border-radius:4px; cursor:pointer; color:#fff; padding:.45rem .9rem
 }
 .logout          { background:#e53935 }
