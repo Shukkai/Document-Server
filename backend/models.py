@@ -6,7 +6,7 @@ from flask_login import UserMixin
 
 db = SQLAlchemy()
 
-# ---------------- User & File tables ----------------
+# ---------------- User, File & Folder tables ----------------
 class User(db.Model, UserMixin):
     id          = db.Column(db.Integer, primary_key=True)
     username    = db.Column(db.String(64),  unique=True, nullable=False)
@@ -16,12 +16,23 @@ class User(db.Model, UserMixin):
     created_at  = db.Column(db.DateTime, server_default=db.func.now())
 
     files = db.relationship("File", backref="owner", lazy=True)
+    folders = db.relationship("Folder", backref="owner", lazy=True)
 
     def set_password(self, raw):
         self.password_hash = generate_password_hash(raw)
 
     def check_password(self, raw):
         return check_password_hash(self.password_hash, raw)
+
+
+class Folder(db.Model):
+    id          = db.Column(db.Integer, primary_key=True)
+    name        = db.Column(db.String(255), nullable=False)
+    owner_id    = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    parent_id   = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
+    created_at  = db.Column(db.DateTime, server_default=db.func.now())
+
+    parent = db.relationship('Folder', remote_side=[id], backref='subfolders')
 
 
 class File(db.Model):
@@ -31,6 +42,9 @@ class File(db.Model):
     path        = db.Column(db.String(255))
     uploaded_at = db.Column(db.DateTime, server_default=db.func.now())
     owner_id    = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    folder_id   = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
+
+    folder = db.relationship('Folder', backref='files')
 
 
 # ---------------- Password-reset tokens -------------
