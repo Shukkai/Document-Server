@@ -18,6 +18,7 @@
         @delete-folder="deleteFolder"
         @delete-file="deleteFile"
         @move-file="moveFile"
+        @refresh-tree="loadFolders"
       />
 
       <!-- create folder -->
