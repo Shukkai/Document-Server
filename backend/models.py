@@ -43,8 +43,29 @@ class File(db.Model):
     uploaded_at = db.Column(db.DateTime, server_default=db.func.now())
     owner_id    = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     folder_id   = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
+    current_version = db.Column(db.Integer, default=1)
 
     folder = db.relationship('Folder', backref='files')
+    versions = db.relationship('FileVersion', backref='file', lazy=True, order_by='FileVersion.version_number.desc()')
+
+    def get_latest_version(self):
+        return FileVersion.query.filter_by(file_id=self.id).order_by(FileVersion.version_number.desc()).first()
+
+    def get_version(self, version_number):
+        return FileVersion.query.filter_by(file_id=self.id, version_number=version_number).first()
+
+
+class FileVersion(db.Model):
+    id              = db.Column(db.Integer, primary_key=True)
+    file_id         = db.Column(db.Integer, db.ForeignKey('file.id'), nullable=False)
+    version_number  = db.Column(db.Integer, nullable=False)
+    path            = db.Column(db.String(255), nullable=False)
+    uploaded_at     = db.Column(db.DateTime, server_default=db.func.now())
+    comment         = db.Column(db.String(500))  # Optional comment for version changes
+
+    __table_args__ = (
+        db.UniqueConstraint('file_id', 'version_number', name='unique_file_version'),
+    )
 
 
 # ---------------- Password-reset tokens -------------

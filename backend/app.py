@@ -15,7 +15,7 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import OperationalError
 
 from models import (
-    db, File, Folder, User,
+    db, File, Folder, User, FileVersion,
     generate_reset_token, verify_reset_token,
 )
 from config import Config
@@ -45,12 +45,17 @@ def folder_disk_path(folder: Folder | None, username: str) -> str:
     Build uploads/<username>/… path for *folder*.
     If *folder* is None ⇒ returns user root folder.
     """
-    parts: list[str] = []
-    while folder and folder.parent_id is not None:   # stop at root
-        parts.append(folder.name)
-        folder = folder.parent
-    parts.reverse()
-    return os.path.join(app.config['UPLOAD_FOLDER'], username, *parts)
+    if not folder or folder.parent_id is None:
+        return os.path.join(app.config['UPLOAD_FOLDER'], username)
+    
+    # For all other folders, just append the folder name to user's root
+    return os.path.join(app.config['UPLOAD_FOLDER'], username, folder.name)
+
+def get_version_dir(username: str) -> str:
+    """Get the .version directory path for a user"""
+    version_dir = os.path.join(app.config['UPLOAD_FOLDER'], username, '.version')
+    os.makedirs(version_dir, exist_ok=True)
+    return version_dir
 
 # ───────────────────────────────── Routes ─────────────────────────────────
 @app.route('/')
@@ -77,10 +82,29 @@ def upload_file():
     final_path = os.path.join(disk_dir, secure_filename(f.filename))
     f.save(final_path)
 
+    # Create file record
     rec = File(filename=f.filename, mimetype=f.mimetype,
                path=final_path, owner_id=current_user.id,
-               folder_id=folder.id if folder else None)
-    db.session.add(rec); db.session.commit()
+               folder_id=folder.id if folder else None,
+               current_version=1)  # Set initial version
+    db.session.add(rec)
+    db.session.flush()  # Get the file ID without committing
+
+    # Create initial version record and store in .version directory
+    version_dir = get_version_dir(current_user.username)
+    version_path = os.path.join(version_dir, f"{rec.id}_v1_{secure_filename(f.filename)}")
+    import shutil
+    shutil.copy2(final_path, version_path)
+
+    version = FileVersion(
+        file_id=rec.id,
+        version_number=1,
+        path=version_path,
+        comment="Initial version"
+    )
+    db.session.add(version)
+    db.session.commit()
+    
     return {"message": "Upload successful", "file_id": rec.id}, 201
 
 # ────────────── Download / Delete file ───────────────────────────────────
@@ -99,12 +123,72 @@ def delete_file(file_id):
     rec = File.query.get_or_404(file_id)
     if rec.owner_id != current_user.id and not current_user.is_admin:
         return {"error": "Access denied"}, 403
-    try:
-        os.remove(rec.path)
-    except FileNotFoundError:
-        pass
-    db.session.delete(rec); db.session.commit()
-    return {"message": "File deleted"}, 200
+
+    # Instead of deleting versions, we'll just delete the file record
+    # The versions will remain in the database and on disk
+    # This allows for potential file restoration later
+    db.session.delete(rec)
+    db.session.commit()
+    
+    return {
+        "message": "File deleted. Version history is preserved and can be restored later.",
+        "file_id": file_id
+    }, 200
+
+@app.route('/list-deleted-files', methods=['GET'])
+@login_required
+def list_deleted_files():
+    """
+    List all files that have been deleted but still have version history.
+    This helps users find files they might want to restore.
+    """
+    # Find all version records that don't have an associated file
+    versions = db.session.query(FileVersion).outerjoin(File).filter(File.id == None).all()
+    
+    # Group versions by file_id to get the latest version for each deleted file
+    deleted_files = {}
+    for version in versions:
+        if version.file_id not in deleted_files or version.version_number > deleted_files[version.file_id]['version_number']:
+            deleted_files[version.file_id] = {
+                'file_id': version.file_id,
+                'version_number': version.version_number,
+                'filename': os.path.basename(version.path).split('_', 1)[1],  # Remove version prefix
+                'last_modified': version.uploaded_at.isoformat(),
+                'size': os.path.getsize(version.path) if os.path.exists(version.path) else 0,
+                'comment': version.comment
+            }
+    
+    return jsonify(list(deleted_files.values()))
+
+@app.route('/permanently-delete/<int:file_id>', methods=['DELETE'])
+@login_required
+def permanently_delete_file(file_id):
+    """
+    Permanently delete a file and all its versions.
+    This is a destructive operation and cannot be undone.
+    """
+    # First check if the file exists
+    file = File.query.get(file_id)
+    if file:
+        if file.owner_id != current_user.id and not current_user.is_admin:
+            return {"error": "Access denied"}, 403
+        db.session.delete(file)
+    
+    # Delete all versions
+    versions = FileVersion.query.filter_by(file_id=file_id).all()
+    for version in versions:
+        try:
+            if os.path.exists(version.path):
+                os.remove(version.path)
+        except FileNotFoundError:
+            pass
+        db.session.delete(version)
+    
+    db.session.commit()
+    return {
+        "message": "File and all its versions permanently deleted",
+        "file_id": file_id
+    }, 200
 
 # ────────────── Folder tree (GET) ────────────────────────────────────────
 @app.route('/folders', methods=['GET'])
@@ -148,12 +232,14 @@ def create_folder():
                               name=name).first():
         return {"error": "Folder already exists"}, 400
 
-    disk_dir = folder_disk_path(parent, current_user.username)
-    os.makedirs(os.path.join(disk_dir, name), exist_ok=True)
+    # Create folder under user's root directory
+    disk_dir = os.path.join(app.config['UPLOAD_FOLDER'], current_user.username, name)
+    os.makedirs(disk_dir, exist_ok=True)
 
     new = Folder(name=name, owner_id=current_user.id,
                  parent_id=parent.id if parent else None)
-    db.session.add(new); db.session.commit()
+    db.session.add(new)
+    db.session.commit()
     return {"message": "Folder created", "folder_id": new.id}, 201
 
 @app.route('/folders/<int:fid>', methods=['DELETE'])
@@ -168,9 +254,6 @@ def delete_folder(fid):
     return {"message": "Folder deleted"}
 
 # ────────────── Move file ────────────────────────────────────────────────
-# backend/app.py  ── keep all existing imports & helpers
-# … above unchanged …
-
 @app.route('/move-file', methods=['POST'])
 @login_required
 def move_file():
@@ -272,6 +355,339 @@ def change_password():
 # ────────────── Error: file too large ────────────────────────────────────
 @app.errorhandler(RequestEntityTooLarge)
 def too_large(_): return {"error":"File exceeds limit"}, 413
+
+# ────────────── Version Control ─────────────────────────────────────────
+@app.route('/upload-version/<int:file_id>', methods=['POST'])
+@login_required
+def upload_version(file_id):
+    f = request.files.get('file')
+    comment = request.form.get('comment', '')
+    
+    if not f:
+        return {"error": "No file provided"}, 400
+
+    file = File.query.get_or_404(file_id)
+    if file.owner_id != current_user.id and not current_user.is_admin:
+        return {"error": "Access denied"}, 403
+
+    # Create new version
+    new_version_number = file.current_version + 1
+    version_dir = get_version_dir(current_user.username)
+    version_path = os.path.join(version_dir, f"{file_id}_v{new_version_number}_{secure_filename(f.filename)}")
+    f.save(version_path)
+
+    # Create version record
+    version = FileVersion(
+        file_id=file.id,
+        version_number=new_version_number,
+        path=version_path,
+        comment=comment
+    )
+    
+    # Update file's current version
+    file.current_version = new_version_number
+    file.path = version_path  # Update current file path to latest version
+    
+    db.session.add(version)
+    db.session.commit()
+    
+    return {
+        "message": "New version uploaded successfully",
+        "version_number": new_version_number,
+        "version_id": version.id
+    }, 201
+
+@app.route('/file-versions/<int:file_id>', methods=['GET'])
+@login_required
+def get_file_versions(file_id):
+    file = File.query.get_or_404(file_id)
+    if file.owner_id != current_user.id and not current_user.is_admin:
+        return {"error": "Access denied"}, 403
+
+    versions = FileVersion.query.filter_by(file_id=file_id).order_by(FileVersion.version_number.desc()).all()
+    return jsonify([{
+        "version_number": v.version_number,
+        "uploaded_at": v.uploaded_at.isoformat(),
+        "comment": v.comment,
+        "is_current": v.version_number == file.current_version,
+        "size": os.path.getsize(v.path) if os.path.exists(v.path) else 0
+    } for v in versions])
+
+@app.route('/restore-version/<int:file_id>/<int:version_number>', methods=['POST'])
+@login_required
+def restore_version(file_id, version_number):
+    file = File.query.get_or_404(file_id)
+    if file.owner_id != current_user.id and not current_user.is_admin:
+        return {"error": "Access denied"}, 403
+
+    version = FileVersion.query.filter_by(file_id=file_id, version_number=version_number).first_or_404()
+    
+    # Create new version from the restored version
+    new_version_number = file.current_version + 1
+    version_dir = get_version_dir(current_user.username)
+    new_version_path = os.path.join(version_dir, f"{file_id}_v{new_version_number}_{secure_filename(file.filename)}")
+    
+    # Copy the restored version to new version
+    import shutil
+    shutil.copy2(version.path, new_version_path)
+    
+    # Create new version record
+    new_version = FileVersion(
+        file_id=file.id,
+        version_number=new_version_number,
+        path=new_version_path,
+        comment=f"Restored from version {version_number}"
+    )
+    
+    # Update file's current version and path
+    file.current_version = new_version_number
+    file.path = new_version_path
+    
+    db.session.add(new_version)
+    db.session.commit()
+    
+    return {
+        "message": f"Successfully restored version {version_number}",
+        "new_version_number": new_version_number
+    }
+
+@app.route('/download-version/<int:file_id>/<int:version_number>')
+@login_required
+def download_version(file_id, version_number):
+    file = File.query.get_or_404(file_id)
+    if file.owner_id != current_user.id and not current_user.is_admin:
+        return {"error": "Access denied"}, 403
+
+    version = FileVersion.query.filter_by(file_id=file_id, version_number=version_number).first_or_404()
+    
+    if not os.path.exists(version.path):
+        return {"error": "Version file not found"}, 404
+        
+    return send_from_directory(
+        os.path.dirname(version.path),
+        os.path.basename(version.path),
+        as_attachment=True,
+        download_name=f"{os.path.splitext(file.filename)[0]}_v{version_number}{os.path.splitext(file.filename)[1]}"
+    )
+
+@app.route('/delete-version/<int:file_id>/<int:version_number>', methods=['DELETE'])
+@login_required
+def delete_version(file_id, version_number):
+    file = File.query.get_or_404(file_id)
+    if file.owner_id != current_user.id and not current_user.is_admin:
+        return {"error": "Access denied"}, 403
+
+    version = FileVersion.query.filter_by(file_id=file_id, version_number=version_number).first_or_404()
+    
+    # Don't allow deleting the current version
+    if version.version_number == file.current_version:
+        return {"error": "Cannot delete current version"}, 400
+        
+    # Don't allow deleting the only version
+    if FileVersion.query.filter_by(file_id=file_id).count() <= 1:
+        return {"error": "Cannot delete the only version"}, 400
+    
+    try:
+        os.remove(version.path)
+    except FileNotFoundError:
+        pass
+        
+    db.session.delete(version)
+    db.session.commit()
+    
+    return {"message": f"Version {version_number} deleted successfully"}
+
+@app.route('/restore-file/<int:file_id>', methods=['POST'])
+@login_required
+def restore_file(file_id):
+    """
+    Restore a deleted file from its latest version.
+    This is useful when a file was accidentally deleted but versions still exist.
+    """
+    # Find the latest version
+    latest_version = FileVersion.query.filter_by(file_id=file_id).order_by(FileVersion.version_number.desc()).first()
+    if not latest_version:
+        return {"error": "No versions found for this file"}, 404
+
+    # Check if file still exists in database
+    file = File.query.get(file_id)
+    if file:
+        return {"error": "File still exists, no need to restore"}, 400
+
+    # Get the original file information from the latest version
+    version_path = latest_version.path
+    if not os.path.exists(version_path):
+        return {"error": "Version file not found"}, 404
+
+    # Create new file record
+    new_file = File(
+        filename=os.path.basename(version_path).split('_', 1)[1],  # Remove version prefix
+        mimetype=latest_version.file.mimetype if latest_version.file else None,
+        path=version_path,
+        owner_id=current_user.id,
+        folder_id=latest_version.file.folder_id if latest_version.file else None,
+        current_version=latest_version.version_number
+    )
+    
+    db.session.add(new_file)
+    db.session.commit()
+
+    return {
+        "message": "File restored successfully",
+        "file_id": new_file.id,
+        "version_number": latest_version.version_number
+    }, 201
+
+@app.route('/cleanup-versions/<int:file_id>', methods=['POST'])
+@login_required
+def cleanup_versions(file_id):
+    """
+    Clean up old versions while keeping the current version.
+    This helps manage storage space.
+    """
+    file = File.query.get_or_404(file_id)
+    if file.owner_id != current_user.id and not current_user.is_admin:
+        return {"error": "Access denied"}, 403
+
+    # Get all versions except current
+    old_versions = FileVersion.query.filter_by(file_id=file_id).filter(
+        FileVersion.version_number != file.current_version
+    ).all()
+
+    deleted_count = 0
+    for version in old_versions:
+        try:
+            if os.path.exists(version.path):
+                os.remove(version.path)
+            db.session.delete(version)
+            deleted_count += 1
+        except FileNotFoundError:
+            pass
+
+    db.session.commit()
+    return {
+        "message": f"Cleaned up {deleted_count} old versions",
+        "current_version": file.current_version
+    }
+
+@app.route('/restore-to-version/<int:file_id>/<int:version_number>', methods=['POST'])
+@login_required
+def restore_to_version(file_id, version_number):
+    """
+    Directly restore a file to a specific version, replacing the current version.
+    This is different from restore-version which creates a new version.
+    """
+    file = File.query.get_or_404(file_id)
+    if file.owner_id != current_user.id and not current_user.is_admin:
+        return {"error": "Access denied"}, 403
+
+    # Get the target version
+    target_version = FileVersion.query.filter_by(file_id=file_id, version_number=version_number).first_or_404()
+    
+    if not os.path.exists(target_version.path):
+        return {"error": "Version file not found"}, 404
+
+    # Create backup of current version before replacing
+    current_version = FileVersion.query.filter_by(file_id=file_id, version_number=file.current_version).first()
+    if current_version and os.path.exists(current_version.path):
+        backup_path = os.path.join(os.path.dirname(current_version.path), 
+                                 f"backup_v{current_version.version_number}_{os.path.basename(file.filename)}")
+        import shutil
+        shutil.copy2(current_version.path, backup_path)
+
+    # Replace current version with target version
+    try:
+        import shutil
+        shutil.copy2(target_version.path, file.path)
+        
+        # Update file's current version
+        file.current_version = version_number
+        
+        # Update the version record's path to point to the new location
+        target_version.path = file.path
+        
+        db.session.commit()
+        
+        return {
+            "message": f"Successfully restored to version {version_number}",
+            "current_version": version_number
+        }
+    except Exception as e:
+        # If something goes wrong, try to restore from backup
+        if 'backup_path' in locals() and os.path.exists(backup_path):
+            shutil.copy2(backup_path, file.path)
+        db.session.rollback()
+        return {"error": f"Failed to restore version: {str(e)}"}, 500
+
+@app.route('/compare-versions/<int:file_id>/<int:version1>/<int:version2>', methods=['GET'])
+@login_required
+def compare_versions(file_id, version1, version2):
+    """
+    Compare two versions of a file and return their differences.
+    This is useful for text files. For binary files, it will return basic metadata comparison.
+    """
+    file = File.query.get_or_404(file_id)
+    if file.owner_id != current_user.id and not current_user.is_admin:
+        return {"error": "Access denied"}, 403
+
+    v1 = FileVersion.query.filter_by(file_id=file_id, version_number=version1).first_or_404()
+    v2 = FileVersion.query.filter_by(file_id=file_id, version_number=version2).first_or_404()
+
+    if not os.path.exists(v1.path) or not os.path.exists(v2.path):
+        return {"error": "One or both version files not found"}, 404
+
+    # Basic metadata comparison
+    comparison = {
+        "version1": {
+            "number": v1.version_number,
+            "uploaded_at": v1.uploaded_at.isoformat(),
+            "comment": v1.comment,
+            "size": os.path.getsize(v1.path)
+        },
+        "version2": {
+            "number": v2.version_number,
+            "uploaded_at": v2.uploaded_at.isoformat(),
+            "comment": v2.comment,
+            "size": os.path.getsize(v2.path)
+        }
+    }
+
+    # For text files, try to show content differences
+    if file.mimetype and file.mimetype.startswith('text/'):
+        try:
+            with open(v1.path, 'r') as f1, open(v2.path, 'r') as f2:
+                content1 = f1.read()
+                content2 = f2.read()
+                
+                # Simple line-by-line comparison
+                lines1 = content1.splitlines()
+                lines2 = content2.splitlines()
+                
+                comparison["text_differences"] = {
+                    "total_lines_v1": len(lines1),
+                    "total_lines_v2": len(lines2),
+                    "different_lines": []
+                }
+                
+                # Compare lines and collect differences
+                for i, (line1, line2) in enumerate(zip(lines1, lines2)):
+                    if line1 != line2:
+                        comparison["text_differences"]["different_lines"].append({
+                            "line_number": i + 1,
+                            "version1": line1,
+                            "version2": line2
+                        })
+                
+                # Handle different length files
+                if len(lines1) != len(lines2):
+                    comparison["text_differences"]["length_difference"] = {
+                        "v1_extra_lines": len(lines1) - len(lines2) if len(lines1) > len(lines2) else 0,
+                        "v2_extra_lines": len(lines2) - len(lines1) if len(lines2) > len(lines1) else 0
+                    }
+        except Exception as e:
+            comparison["text_comparison_error"] = str(e)
+
+    return jsonify(comparison)
 
 # ────────────── Bootstrapping ────────────────────────────────────────────
 if __name__ == '__main__':

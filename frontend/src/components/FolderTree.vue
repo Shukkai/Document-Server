@@ -63,9 +63,19 @@
                 target="_blank"
                 rel="noopener"
                 :class="{ disabled: isLoading }"
+                class="btn-sm"
               >
                 Download
               </a>
+
+              <button
+                class="btn-sm"
+                @click="showVersionControl(file)"
+                :disabled="isLoading"
+              >
+                Versions
+              </button>
+
               <button
                 class="btn-sm danger"
                 @click="handleDeleteFile(file.id)"
@@ -88,6 +98,25 @@
                 title="pdf preview"
               ></iframe>
             </div>
+
+            <!-- Version Control Modal -->
+            <div v-if="selectedFile && selectedFile.id === file.id" class="version-modal">
+              <div class="modal-content">
+                <button class="close-btn" @click="closeVersionControl">&times;</button>
+                <div class="modal-header">
+                  <h3>Version Control - {{ file.name }}</h3>
+                  <p class="file-info">
+                    Type: {{ file.mimetype }} | 
+                    Last Modified: {{ new Date(file.updated_at).toLocaleString() }}
+                  </p>
+                </div>
+                <FileVersion 
+                  :fileId="file.id"
+                  @success="handleVersionSuccess"
+                  @error="handleVersionError"
+                />
+              </div>
+            </div>
           </li>
         </ul>
 
@@ -108,6 +137,7 @@
 import { computed, defineProps, defineEmits, watch, ref } from 'vue'
 import axios from 'axios'
 import FolderTree from './FolderTree.vue'
+import FileVersion from './FileVersion.vue'
 
 /* ---------- props / emits ---------- */
 const props = defineProps({ folders: { type: Array, required: true } })
@@ -116,6 +146,7 @@ const emit = defineEmits(['delete-folder', 'delete-file', 'refresh-tree'])
 /* ---------- state ---------- */
 const isLoading = ref(false)
 const error = ref(null)
+const selectedFile = ref(null)
 
 /* ---------- helpers ---------- */
 const baseURL = axios.defaults.baseURL
@@ -136,6 +167,32 @@ const flatOptions = computed(() => {
   props.folders.forEach(f => flatten(f, list))
   return list
 })
+
+/* ---------- version control ---------- */
+function showVersionControl(file) {
+  selectedFile.value = file
+}
+
+function closeVersionControl() {
+  selectedFile.value = null
+}
+
+function handleVersionSuccess(message) {
+  error.value = null
+  emit('refresh-tree')
+  // Show success message
+  error.value = message || 'Version operation completed successfully'
+  setTimeout(() => {
+    error.value = null
+  }, 3000)
+}
+
+function handleVersionError(message) {
+  error.value = message || 'Version operation failed'
+  setTimeout(() => {
+    error.value = null
+  }, 5000)
+}
 
 /* ---------- move file ---------- */
 async function move(file) {
@@ -160,6 +217,8 @@ async function move(file) {
 
 /* ---------- delete handlers ---------- */
 async function handleDeleteFolder(folderId) {
+  if (!confirm('Are you sure you want to delete this folder?')) return
+  
   isLoading.value = true
   error.value = null
   
@@ -176,6 +235,8 @@ async function handleDeleteFolder(folderId) {
 }
 
 async function handleDeleteFile(fileId) {
+  if (!confirm('Are you sure you want to delete this file? The version history will be preserved.')) return
+  
   isLoading.value = true
   error.value = null
   
@@ -183,6 +244,11 @@ async function handleDeleteFile(fileId) {
     await axios.delete(`/file/${fileId}`, { withCredentials: true })
     emit('delete-file', fileId)
     emit('refresh-tree')
+    // Show success message
+    error.value = 'File deleted successfully. Version history is preserved.'
+    setTimeout(() => {
+      error.value = null
+    }, 3000)
   } catch (e) {
     error.value = e.response?.data?.error || 'Delete failed'
     console.error('Delete file failed:', e)
@@ -205,7 +271,47 @@ async function handleDeleteFile(fileId) {
 .preview img     { max-width: 160px; max-height: 160px; border: 1px solid #ccc }
 .preview iframe  { width: 160px; height: 160px; border: 1px solid #ccc }
 
-/* New styles */
+/* Version Modal */
+.version-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  position: relative;
+  width: 90%;
+  max-width: 1200px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.close-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+}
+
+.close-btn:hover {
+  color: #000;
+}
+
+/* Error and Loading styles */
 .error-message {
   background: #ffebee;
   color: #c62828;
@@ -247,5 +353,22 @@ async function handleDeleteFile(fileId) {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+.modal-header {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+  margin: 0 0 0.5rem 0;
+  color: #333;
+}
+
+.file-info {
+  margin: 0;
+  color: #666;
+  font-size: 0.9rem;
 }
 </style>
