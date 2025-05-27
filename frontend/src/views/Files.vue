@@ -8,9 +8,25 @@
       <h2>Upload New File</h2>
       <div class="upload-controls">
         <input type="file" @change="onFileChange" />
+        
+        <!-- Add folder selection dropdown -->
+        <select v-model="selectedFolderId" class="folder-select">
+          <option value="">📁 Root Folder</option>
+          <option 
+            v-for="folder in flat" 
+            :key="folder.id" 
+            :value="folder.id"
+          >
+            📁 {{ folder.name }}
+          </option>
+        </select>
+        
         <button :disabled="!selectedFile" @click="upload">Upload</button>
       </div>
       <p class="upload-info">Upload a new file or create a new version of an existing file</p>
+      <p v-if="selectedFolderId" class="target-info">
+        Target: {{ getFolderName(selectedFolderId) }}
+      </p>
     </div>
 
     <!-- ───────────── Folders / files ───────────── -->
@@ -57,6 +73,7 @@ import FolderTree          from '@/components/FolderTree.vue'
 const folders        = ref([])   // nested tree
 const flat           = ref([])   // flat list for <select>
 const selectedFile   = ref(null)
+const selectedFolderId = ref('')  // Add this new state for target folder
 const newFolderName  = ref('')
 const errorMessage   = ref('')
 const successMessage = ref('')
@@ -78,6 +95,13 @@ function onFileChange (e) {
   }
 }
 
+// Add new helper function to get folder name
+function getFolderName(folderId) {
+  if (!folderId) return 'Root Folder'
+  const folder = flat.value.find(f => f.id === folderId)
+  return folder ? folder.name : 'Unknown Folder'
+}
+
 /* -------------------------------------------------------------- load tree */
 async function loadFolders () {
   try {
@@ -96,11 +120,18 @@ async function upload () {
   if (!selectedFile.value) return
   const fd = new FormData()
   fd.append('file', selectedFile.value)
+  
+  // Add folder_id to form data if a folder is selected
+  if (selectedFolderId.value) {
+    fd.append('folder_id', selectedFolderId.value)
+  }
+  
   try {
     await axios.post('/upload', fd, { withCredentials:true })
     await loadFolders()
     selectedFile.value = null
-    flash('File uploaded successfully')
+    // Keep the selected folder for next upload
+    flash(`File uploaded successfully to ${getFolderName(selectedFolderId.value)}`)
   } catch (err) { handleErr(err) }
 }
 
@@ -298,5 +329,20 @@ button:hover {
 button:disabled {
   background: #ccc;
   cursor: not-allowed;
+}
+
+.folder-select {
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  min-width: 150px;
+}
+
+.target-info {
+  color: #1976d2;
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0 0;
+  font-style: italic;
 }
 </style>
