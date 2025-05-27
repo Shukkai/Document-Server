@@ -17,11 +17,11 @@ async function checkSession() {
   if (sessionCache.value !== null) return sessionCache.value
   
   try {
-    // Check both folders and version endpoints to ensure full access
-    await Promise.all([
-      axios.get('/folders', { validateStatus: s => s < 400 }),
-      axios.get('/file-versions', { validateStatus: s => s < 400 })
-    ])
+    // Simple health check to see if user is authenticated
+    await axios.get('/folders', { 
+      withCredentials: true,
+      timeout: 5000
+    })
     sessionCache.value = true
   } catch (error) {
     sessionCache.value = false
@@ -45,11 +45,7 @@ const routes = [
   { 
     path: '/files',          
     name: 'Files',          
-    component: FilesView,
-    props: route => ({ 
-      folderId: route.query.folder,
-      versionId: route.query.version 
-    })
+    component: FilesView
   },
   { 
     path: '/reset-password/:token', 
@@ -59,11 +55,6 @@ const routes = [
   { 
     path: '/login', 
     redirect: '/' 
-  },
-  // Catch all route for 404s
-  {
-    path: '/:pathMatch(.*)*',
-    redirect: '/files'
   }
 ]
 
@@ -74,28 +65,26 @@ const router = createRouter({
 
 // Global navigation guard
 router.beforeEach(async (to, from, next) => {
+  console.log('Navigating to:', to.path)
+  
+  // Allow access to public routes without session check
+  if (to.path === '/' || to.path === '/register' || to.path.startsWith('/reset-password')) {
+    return next()
+  }
+  
   const loggedIn = await checkSession()
+  console.log('Session check result:', loggedIn)
 
-  // Handle authentication
+  // Handle authentication for protected routes
   if (!loggedIn && to.path.startsWith('/files')) {
+    console.log('Not logged in, redirecting to login')
     return next('/')
   }
+  
+  // If logged in and trying to access login, redirect to files
   if (loggedIn && (to.path === '/' || to.path === '/login')) {
+    console.log('Already logged in, redirecting to files')
     return next('/files')
-  }
-
-  // Handle version-specific routes
-  if (to.path.startsWith('/files') && to.query.version) {
-    // Ensure user has access to the version
-    try {
-      await axios.get(`/file-versions/${to.query.version}`, { 
-        validateStatus: s => s < 400 
-      })
-    } catch (error) {
-      // If version access fails, redirect to files without version
-      const { version, ...query } = to.query
-      return next({ path: '/files', query })
-    }
   }
 
   next()
@@ -104,8 +93,6 @@ router.beforeEach(async (to, from, next) => {
 // Global error handler
 router.onError((error) => {
   console.error('Router error:', error)
-  // Redirect to files page on error
-  router.push('/files')
 })
 
 export default router
