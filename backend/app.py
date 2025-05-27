@@ -48,8 +48,16 @@ def folder_disk_path(folder: Folder | None, username: str) -> str:
     if not folder or folder.parent_id is None:
         return os.path.join(app.config['UPLOAD_FOLDER'], username)
     
-    # For all other folders, just append the folder name to user's root
-    return os.path.join(app.config['UPLOAD_FOLDER'], username, folder.name)
+    # Build the full path hierarchy recursively
+    path_parts = []
+    current = folder
+    
+    while current and current.parent_id is not None:
+        path_parts.append(current.name)
+        current = Folder.query.get(current.parent_id)
+    
+    path_parts.reverse()  # Reverse to get correct order
+    return os.path.join(app.config['UPLOAD_FOLDER'], username, *path_parts)
 
 def get_version_dir(username: str) -> str:
     """Get the .version directory path for a user"""
@@ -212,10 +220,30 @@ def get_folders():
             ],
             "children": [ser(ch) for ch in folder.subfolders]
         }
+    
+    def get_flat_folders(folder, depth=0):
+        """Get a flat list of folders (excluding root) for dropdown"""
+        folders = []
+        if folder:
+            for child in folder.subfolders:
+                indent = '  ' * depth
+                folders.append({
+                    'id': child.id,
+                    'name': f"{indent}{child.name}"
+                })
+                folders.extend(get_flat_folders(child, depth + 1))
+        return folders
+    
     root = Folder.query.filter_by(owner_id=current_user.id,
                                   parent_id=None).first()
-    return jsonify(ser(root) if root else
-                   {"id": None, "name": "", "files": [], "children": []})
+    
+    folder_tree = ser(root) if root else {"id": None, "name": "", "files": [], "children": []}
+    flat_folders = get_flat_folders(root)
+    
+    return jsonify({
+        "tree": folder_tree,
+        "flat": flat_folders
+    })
 
 # ────────────── Create / Delete folder ───────────────────────────────────
 @app.route('/folders', methods=['POST'])
@@ -237,8 +265,9 @@ def create_folder():
                               name=name).first():
         return {"error": "Folder already exists"}, 400
 
-    # Create folder under user's root directory
-    disk_dir = os.path.join(app.config['UPLOAD_FOLDER'], current_user.username, name)
+    # Create folder in the correct parent directory
+    parent_disk_path = folder_disk_path(parent, current_user.username)
+    disk_dir = os.path.join(parent_disk_path, name)
     os.makedirs(disk_dir, exist_ok=True)
 
     new = Folder(name=name, owner_id=current_user.id,
@@ -305,7 +334,7 @@ def register():
     db.session.add(user); db.session.commit()
 
     # create root folder + disk dir
-    root = Folder(name=user.username, owner_id=user.id, parent_id=None)
+    root = Folder(name='Root folder', owner_id=user.id, parent_id=None)
     db.session.add(root); db.session.commit()
     os.makedirs(os.path.join(Config.UPLOAD_FOLDER, user.username),
                 exist_ok=True)
@@ -705,7 +734,7 @@ def create_default_test_user():
         db.session.flush()  # Get the user ID
         
         # Create root folder for test user
-        root_folder = Folder(name='test', owner_id=test_user.id, parent_id=None)
+        root_folder = Folder(name='Root folder', owner_id=test_user.id, parent_id=None)
         db.session.add(root_folder)
         db.session.commit()
         

@@ -36,6 +36,15 @@
             @keyup.enter="createFolder"
           />
         </div>
+        <div class="parent-folder-selection">
+          <label for="parent-folder-select">Create in folder:</label>
+          <select id="parent-folder-select" v-model="selectedParentFolderId" class="folder-select">
+            <option :value="null">Root folder</option>
+            <option v-for="folder in flat" :key="folder.id" :value="folder.id">
+              {{ folder.name }}
+            </option>
+          </select>
+        </div>
         <button 
           class="btn create-btn" 
           :disabled="!newFolderName.trim()" 
@@ -90,6 +99,7 @@ const folders        = ref([])   // nested tree
 const flat           = ref([])   // flat list for <select>
 const selectedFile   = ref(null)
 const selectedFolderId = ref(null) // for upload destination
+const selectedParentFolderId = ref(null) // for folder creation parent
 const newFolderName  = ref('')
 const errorMessage   = ref('')
 const successMessage = ref('')
@@ -121,16 +131,29 @@ function onFileChange (e) {
 async function loadFolders () {
   try {
     const { data } = await axios.get('/folders', { withCredentials:true })
-    const root     = Array.isArray(data) ? data : [data]   // ensure array
-    folders.value  = root
-    // flat list for dropdown:
-    flat.value     = []
-    function walk(n, depth = 0){ 
-      const indent = '  '.repeat(depth)
-      flat.value.push({id:n.id, name: `${indent}${n.name}`}); 
-      n.children?.forEach(child => walk(child, depth + 1)) 
+    
+    // Handle new API response structure
+    if (data.tree && data.flat) {
+      // New API format with tree and flat structure
+      const root = Array.isArray(data.tree) ? data.tree : [data.tree]
+      folders.value = root
+      flat.value = data.flat || []
+    } else {
+      // Fallback for old API format
+      const root = Array.isArray(data) ? data : [data]
+      folders.value = root
+      // Generate flat list for dropdown (excluding root folder):
+      flat.value = []
+      function walk(n, depth = 0){ 
+        // Skip root folder (parent_id is null)
+        if (n.parent_id !== null) {
+          const indent = '  '.repeat(depth)
+          flat.value.push({id: n.id, name: `${indent}${n.name}`})
+        }
+        n.children?.forEach(child => walk(child, depth + 1)) 
+      }
+      root.forEach(walk)
     }
-    root.forEach(walk)
   } catch (err) { handleErr(err) }
 }
 
@@ -157,9 +180,19 @@ async function upload () {
 async function createFolder () {
   if (!newFolderName.value) return
   try {
-    await axios.post('/folders', { name: newFolderName.value }, { withCredentials: true })
-    successMessage.value = `Folder "${newFolderName.value}" created successfully!`
+    const payload = { 
+      name: newFolderName.value,
+      parent_id: selectedParentFolderId.value
+    }
+    await axios.post('/folders', payload, { withCredentials: true })
+    
+    const parentName = selectedParentFolderId.value 
+      ? flat.value.find(f => f.id === selectedParentFolderId.value)?.name || 'Selected folder'
+      : 'Root folder'
+    
+    successMessage.value = `Folder "${newFolderName.value}" created successfully in ${parentName}!`
     newFolderName.value = ''
+    selectedParentFolderId.value = null
     await loadFolders()
     
   } catch (err) {
@@ -341,10 +374,17 @@ onMounted(() => {
   gap: 0.5rem;
 }
 
-.folder-input-group label {
+.folder-input-group label,
+.parent-folder-selection label {
   font-weight: 600;
   color: #333;
   font-size: 0.9rem;
+}
+
+.parent-folder-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .create-folder-info {

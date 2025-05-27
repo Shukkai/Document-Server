@@ -17,8 +17,11 @@
     <div class="folder-tree">
       <div v-for="folder in folders" :key="folder.id" class="folder-item">
         <!-- Folder Header -->
-        <div class="folder-header">
+        <div class="folder-header" @click="toggleFolder(folder.id)">
           <div class="folder-info">
+            <button class="folder-toggle" :class="{ 'expanded': isFolderExpanded(folder.id) }">
+              <span class="toggle-icon">{{ isFolderExpanded(folder.id) ? '▼' : '▶' }}</span>
+            </button>
             <span class="folder-icon">📁</span>
             <h3 class="folder-name">{{ folder.name }}</h3>
             <span class="folder-stats">
@@ -29,7 +32,7 @@
             </span>
           </div>
           
-          <div class="folder-actions">
+          <div class="folder-actions" @click.stop>
             <button
               v-if="folder.parent_id !== null"
               class="btn btn-danger btn-sm"
@@ -43,133 +46,138 @@
           </div>
         </div>
 
-        <!-- Files in this folder -->
-        <div v-if="folder.files?.length > 0" class="files-section">
-          <div class="files-grid">
-            <div 
-              v-for="file in folder.files" 
-              :key="file.id" 
-              class="file-card"
-            >
-              <!-- File Header -->
-              <div class="file-header">
-                <div class="file-info">
-                  <span class="file-icon">{{ getFileIcon(file.mimetype) }}</span>
-                  <div class="file-details">
-                    <h4 class="file-name" :title="file.name">{{ file.name }}</h4>
-                    <p class="file-meta">
-                      {{ formatFileType(file.mimetype) }}
-                      <span v-if="file.uploaded_at">
-                        • {{ formatDate(file.uploaded_at) }}
-                      </span>
-                    </p>
+        <!-- Folder Contents (collapsible) -->
+        <transition name="folder-expand">
+          <div v-if="isFolderExpanded(folder.id)" class="folder-contents">
+            <!-- Files in this folder -->
+            <div v-if="folder.files?.length > 0" class="files-section">
+              <div class="files-grid">
+                <div 
+                  v-for="file in folder.files" 
+                  :key="file.id" 
+                  class="file-card"
+                >
+                  <!-- File Header -->
+                  <div class="file-header">
+                    <div class="file-info">
+                      <span class="file-icon">{{ getFileIcon(file.mimetype) }}</span>
+                      <div class="file-details">
+                        <h4 class="file-name" :title="file.name">{{ file.name }}</h4>
+                        <p class="file-meta">
+                          {{ formatFileType(file.mimetype) }}
+                          <span v-if="file.uploaded_at">
+                            • {{ formatDate(file.uploaded_at) }}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              <!-- File Preview -->
-              <div v-if="isPreviewable(file.mimetype)" class="file-preview">
-                <img
-                  v-if="file.mimetype?.startsWith('image/')"
-                  :src="`${baseURL}/download/${file.id}`"
-                  :alt="file.name"
-                  class="preview-image"
-                />
-                <div v-else class="pdf-preview">
-                  <iframe
-                    :src="`${baseURL}/download/${file.id}`"
-                    :title="file.name"
-                    class="preview-iframe"
-                  ></iframe>
-                  <div class="pdf-overlay">
-                    <span class="pdf-label">PDF Preview</span>
+                  <!-- File Preview -->
+                  <div v-if="isPreviewable(file.mimetype)" class="file-preview">
+                    <img
+                      v-if="file.mimetype?.startsWith('image/')"
+                      :src="`${baseURL}/download/${file.id}`"
+                      :alt="file.name"
+                      class="preview-image"
+                    />
+                    <div v-else class="pdf-preview">
+                      <iframe
+                        :src="`${baseURL}/download/${file.id}`"
+                        :title="file.name"
+                        class="preview-iframe"
+                      ></iframe>
+                      <div class="pdf-overlay">
+                        <span class="pdf-label">PDF Preview</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              <!-- File Actions -->
-              <div class="file-actions">
-                <!-- Move file -->
-                <div class="move-section">
-                  <select
-                    v-model="file.__target"
-                    class="move-select"
-                    :disabled="isLoading"
-                  >
-                    <option disabled value="">Move to folder...</option>
-                    <option
-                      v-for="opt in flatOptions"
-                      :key="opt.id"
-                      :value="opt.id"
-                      :disabled="opt.id === folder.id"
-                    >
-                      📁 {{ opt.label }}
-                    </option>
-                  </select>
-                  <button
-                    class="btn btn-primary btn-sm"
-                    :disabled="!file.__target || isLoading"
-                    @click="move(file)"
-                    title="Move file"
-                  >
-                    <span class="icon">📤</span>
-                  </button>
-                </div>
+                  <!-- File Actions -->
+                  <div class="file-actions">
+                    <!-- Move file -->
+                    <div class="move-section">
+                      <select
+                        v-model="file.__target"
+                        class="move-select"
+                        :disabled="isLoading"
+                      >
+                        <option disabled value="">Move to folder...</option>
+                        <option
+                          v-for="opt in flatOptions"
+                          :key="opt.id"
+                          :value="opt.id"
+                          :disabled="opt.id === folder.id"
+                        >
+                          📁 {{ opt.label }}
+                        </option>
+                      </select>
+                      <button
+                        class="btn btn-primary btn-sm"
+                        :disabled="!file.__target || isLoading"
+                        @click="move(file)"
+                        title="Move file"
+                      >
+                        <span class="icon">📤</span>
+                      </button>
+                    </div>
 
-                <!-- Action buttons -->
-                <div class="action-buttons">
-                  <a
-                    :href="`${baseURL}/download/${file.id}`"
-                    target="_blank"
-                    rel="noopener"
-                    :class="{ disabled: isLoading }"
-                    class="btn btn-success btn-sm"
-                    title="Download file"
-                  >
-                    <span class="icon">📥</span>
-                    Download
-                  </a>
+                    <!-- Action buttons -->
+                    <div class="action-buttons">
+                      <a
+                        :href="`${baseURL}/download/${file.id}`"
+                        target="_blank"
+                        rel="noopener"
+                        :class="{ disabled: isLoading }"
+                        class="btn btn-success btn-sm"
+                        title="Download file"
+                      >
+                        <span class="icon">📥</span>
+                        Download
+                      </a>
 
-                  <button
-                    class="btn btn-info btn-sm"
-                    @click="showVersionControl(file)"
-                    :disabled="isLoading"
-                    title="Manage versions"
-                  >
-                    <span class="icon">📋</span>
-                    Versions
-                  </button>
+                      <button
+                        class="btn btn-info btn-sm"
+                        @click="showVersionControl(file)"
+                        :disabled="isLoading"
+                        title="Manage versions"
+                      >
+                        <span class="icon">📋</span>
+                        Versions
+                      </button>
 
-                  <button
-                    class="btn btn-danger btn-sm"
-                    @click="handleDeleteFile(file.id)"
-                    :disabled="isLoading"
-                    title="Delete file"
-                  >
-                    <span class="icon">🗑️</span>
-                    Delete
-                  </button>
+                      <button
+                        class="btn btn-danger btn-sm"
+                        @click="handleDeleteFile(file.id)"
+                        :disabled="isLoading"
+                        title="Delete file"
+                      >
+                        <span class="icon">🗑️</span>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
+
+            <!-- No files message -->
+            <div v-else-if="!folder.children?.length" class="no-files">
+              <span class="icon">📂</span>
+              <p>This folder is empty</p>
+            </div>
+
+            <!-- Recursive children -->
+            <div v-if="folder.children?.length" class="subfolder-section">
+              <FolderTree
+                :folders="folder.children"
+                @delete-folder="handleDeleteFolder"
+                @delete-file="handleDeleteFile"
+                @refresh-tree="$emit('refresh-tree')"
+              />
+            </div>
           </div>
-        </div>
-
-        <!-- No files message -->
-        <div v-else class="no-files">
-          <span class="icon">📂</span>
-          <p>This folder is empty</p>
-        </div>
-
-        <!-- Recursive children -->
-        <div v-if="folder.children?.length" class="subfolder-section">
-          <FolderTree
-            :folders="folder.children"
-            @delete-folder="handleDeleteFolder"
-            @delete-file="handleDeleteFile"
-            @refresh-tree="$emit('refresh-tree')"
-          />
-        </div>
+        </transition>
       </div>
     </div>
 
@@ -204,7 +212,7 @@
 </template>
 
 <script setup>
-import { computed, defineProps, defineEmits, ref } from 'vue'
+import { computed, defineProps, defineEmits, ref, watch } from 'vue'
 import axios from 'axios'
 import FolderTree from './FolderTree.vue'
 import FileVersion from './FileVersion.vue'
@@ -213,10 +221,23 @@ import FileVersion from './FileVersion.vue'
 const props = defineProps({ folders: { type: Array, required: true } })
 const emit = defineEmits(['delete-folder', 'delete-file', 'refresh-tree'])
 
+/* ---------- auto-expand root folders ---------- */
+watch(() => props.folders, (newFolders) => {
+  // Auto-expand root folders when they're loaded
+  if (newFolders && newFolders.length > 0) {
+    newFolders.forEach(folder => {
+      if (folder.parent_id === null) {
+        expandedFolders.value.add(folder.id)
+      }
+    })
+  }
+}, { immediate: true })
+
 /* ---------- state ---------- */
 const isLoading = ref(false)
 const error = ref(null)
 const selectedFile = ref(null)
+const expandedFolders = ref(new Set())
 
 /* ---------- helpers ---------- */
 const baseURL = axios.defaults.baseURL
@@ -275,6 +296,19 @@ const flatOptions = computed(() => {
   props.folders.forEach(f => flatten(f, list))
   return list
 })
+
+/* ---------- folder expansion ---------- */
+function toggleFolder(folderId) {
+  if (expandedFolders.value.has(folderId)) {
+    expandedFolders.value.delete(folderId)
+  } else {
+    expandedFolders.value.add(folderId)
+  }
+}
+
+function isFolderExpanded(folderId) {
+  return expandedFolders.value.has(folderId)
+}
 
 /* ---------- version control ---------- */
 function showVersionControl(file) {
@@ -400,12 +434,46 @@ async function handleDeleteFile(fileId) {
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid #cbd5e0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.folder-header:hover {
+  background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e0 100%);
 }
 
 .folder-info {
   display: flex;
   align-items: center;
   gap: 1rem;
+}
+
+.folder-toggle {
+  background: none;
+  border: none;
+  padding: 0.25rem;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.folder-toggle:hover {
+  background: rgba(66, 153, 225, 0.1);
+}
+
+.toggle-icon {
+  font-size: 0.8rem;
+  color: #4299e1;
+  transition: transform 0.2s ease;
+}
+
+.folder-toggle.expanded .toggle-icon {
+  transform: rotate(90deg);
 }
 
 .folder-icon {
@@ -660,6 +728,11 @@ async function handleDeleteFile(fileId) {
   font-style: italic;
 }
 
+/* ──────────── Folder Contents ──────────── */
+.folder-contents {
+  overflow: hidden;
+}
+
 /* ──────────── Subfolder Section ──────────── */
 .subfolder-section {
   padding: 0 1.5rem 1.5rem;
@@ -805,6 +878,18 @@ async function handleDeleteFile(fileId) {
 
 .fade-enter-from, .fade-leave-to {
   opacity: 0;
+}
+
+.folder-expand-enter-active, .folder-expand-leave-active {
+  transition: all 0.3s ease;
+  max-height: 1000px;
+  opacity: 1;
+}
+
+.folder-expand-enter-from, .folder-expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-10px);
 }
 
 /* ──────────── Icons ──────────── */
