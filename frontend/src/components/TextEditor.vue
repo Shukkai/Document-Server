@@ -5,15 +5,23 @@
         <h3>Editing: {{ filename }}</h3>
         <button class="modal-close" @click="closeEditor">×</button>
       </div>
-      <div class="modal-body">
-        <textarea v-if="!loading && !error" v-model="content" class="text-editor-textarea"></textarea>
+      <div class="modal-body" :class="{ loading: loading, errored: !!error }">
+        <QuillEditor 
+          v-if="!loading && !error"
+          v-model:content="content"
+          contentType="html" 
+          theme="snow" 
+          :toolbar="toolbarOptions"
+          class="rich-text-editor"
+          placeholder="Start typing or paste your content here..."
+        />
         <div v-if="loading" class="loading-spinner-container">
           <div class="loading-spinner"></div>
           <p>Loading file...</p>
         </div>
         <div v-if="error" class="editor-error">
           <p>⚠️ {{ error }}</p>
-          <button @click="fetchContent">Retry</button>
+          <button @click="fetchContent" class="btn btn-sm btn-danger">Retry</button>
         </div>
       </div>
       <div class="modal-footer">
@@ -21,7 +29,11 @@
           {{ saveStatus }}
         </div>
         <button class="btn btn-secondary" @click="closeEditor" :disabled="isSaving">Cancel</button>
-        <button class="btn btn-primary" @click="saveContent" :disabled="isSaving || loading || error">
+        <button 
+          class="btn btn-primary" 
+          @click="saveContent" 
+          :disabled="isSaving || loading || !!error || isContentUnchanged"
+        >
           <span v-if="isSaving" class="icon">⏳</span>
           <span v-else class="icon">💾</span>
           Save
@@ -32,8 +44,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, defineProps, defineEmits } from 'vue';
+import { ref, onMounted, defineProps, defineEmits, computed } from 'vue';
 import axios from 'axios';
+import { QuillEditor } from '@vueup/vue-quill';
+import '@vueup/vue-quill/dist/vue-quill.snow.css'; // Import Quill Snow theme CSS
 
 const props = defineProps({
   fileId: { type: Number, required: true },
@@ -43,6 +57,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'save-success']);
 
 const content = ref('');
+const originalContent = ref(''); // To track changes
 const filename = ref(props.initialFilename);
 const loading = ref(true);
 const error = ref(null);
@@ -50,13 +65,44 @@ const isSaving = ref(false);
 const saveStatus = ref('');
 const isSuccess = ref(false);
 
+// Basic toolbar options for Quill. You can customize this extensively.
+// https://quilljs.com/docs/modules/toolbar/
+const toolbarOptions = [
+  [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+  [{ 'font': [] }],
+  ['bold', 'italic', 'underline', 'strike'], // toggled buttons
+  ['blockquote', 'code-block'],
+
+  [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+  [{ 'script': 'sub'}, { 'script': 'super' }], // superscript/subscript
+  [{ 'indent': '-1'}, { 'indent': '+1' }], // outdent/indent
+  [{ 'direction': 'rtl' }], // text direction
+
+  [{ 'size': ['small', false, 'large', 'huge'] }], // custom dropdown
+  
+  [{ 'color': [] }, { 'background': [] }], // dropdown with defaults from theme
+  [{ 'align': [] }],
+
+  ['clean'], // remove formatting button
+  ['link', 'image', 'video'] // image and video are for URLs, paste works for base64
+];
+
+const isContentUnchanged = computed(() => {
+  // Quill might add a default paragraph tag to empty content
+  const normalizedCurrentContent = content.value === '<p><br></p>' ? '' : content.value;
+  const normalizedOriginalContent = originalContent.value === '<p><br></p>' ? '' : originalContent.value;
+  return normalizedCurrentContent === normalizedOriginalContent;
+});
+
 async function fetchContent() {
   loading.value = true;
   error.value = null;
   saveStatus.value = '';
   try {
     const response = await axios.get(`/file-content/${props.fileId}`, { withCredentials: true });
-    content.value = response.data.content;
+    // Assuming backend sends HTML content now
+    content.value = response.data.content || ''; 
+    originalContent.value = content.value; // Store initial content for change detection
     filename.value = response.data.filename || props.initialFilename;
   } catch (err) {
     console.error('Error fetching file content:', err);
@@ -67,23 +113,31 @@ async function fetchContent() {
 }
 
 async function saveContent() {
+  if (isContentUnchanged.value) {
+    saveStatus.value = 'No changes to save.';
+    isSuccess.value = true; // Or neutral, but let's indicate it's not an error
+    setTimeout(() => { saveStatus.value = '' }, 3000);
+    return;
+  }
   isSaving.value = true;
   saveStatus.value = '';
   error.value = null; 
   try {
+    // Send HTML content to the backend
     await axios.post(`/file-content/${props.fileId}`, { content: content.value }, { withCredentials: true });
+    originalContent.value = content.value; // Update original content after successful save
     saveStatus.value = 'File saved successfully!';
     isSuccess.value = true;
     emit('save-success');
-    setTimeout(() => closeEditor(), 1500); // Auto-close on success
+    setTimeout(() => closeEditor(), 1500); 
   } catch (err) {
     console.error('Error saving file content:', err);
     saveStatus.value = err.response?.data?.error || 'Failed to save file.';
     isSuccess.value = false;
-    error.value = saveStatus.value; // Display save error in main error area too
+    // error.value = saveStatus.value; // Keep error distinct from saveStatus
   } finally {
     isSaving.value = false;
-    setTimeout(() => { saveStatus.value = '' }, 4000); // Clear status message
+    setTimeout(() => { saveStatus.value = '' }, 4000); 
   }
 }
 
@@ -115,8 +169,8 @@ onMounted(() => {
   background: white;
   border-radius: 12px;
   width: 90%;
-  max-width: 800px;
-  max-height: 90vh;
+  max-width: 900px; /* Wider for rich editor */
+  height: 90vh; /* Taller for rich editor */
   display: flex;
   flex-direction: column;
   box-shadow: 0 10px 30px rgba(0,0,0,0.2);
@@ -128,6 +182,7 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .modal-header h3 {
@@ -144,23 +199,44 @@ onMounted(() => {
 }
 
 .modal-body {
-  padding: 1.5rem;
+  padding: 0; /* Quill will have its own padding if theme provides */
   flex-grow: 1;
-  overflow-y: auto; /* Allows textarea to take space and body to scroll if needed */
-  display: flex; /* Center loading/error states */
+  overflow-y: hidden; /* Let Quill handle its own scrolling */
+  display: flex;
   flex-direction: column;
+  position: relative; /* For spinner positioning */
+}
+.modal-body.loading, .modal-body.errored {
+  padding: 1.5rem; /* Add padding back if showing spinner/error full body */
+  overflow-y: auto;
 }
 
-.text-editor-textarea {
-  width: 100%;
-  height: 100%; /* Take full height of modal-body */
-  min-height: 400px; /* Ensure a good default size */
-  border: 1px solid #cbd5e0;
-  border-radius: 6px;
-  padding: 0.75rem;
-  font-family: monospace;
-  font-size: 0.9rem;
-  resize: vertical;
+.rich-text-editor {
+  height: 100%;
+  display: flex;
+  flex-direction: column; /* Ensure toolbar and content area flow correctly */
+  border: none; /* Remove default border if Quill adds one, or style as needed */
+}
+
+/* Style Quill editor content area if needed. Default is .ql-container and .ql-editor */
+:deep(.ql-toolbar.ql-snow) {
+  border-top-left-radius: 6px; /* Match modal style if desired */
+  border-top-right-radius: 6px;
+  border: 1px solid #ccc;
+  border-bottom: none; /* Toolbar is on top */
+  padding: 8px;
+}
+:deep(.ql-container.ql-snow) {
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+  border: 1px solid #ccc;
+  flex-grow: 1;
+  overflow-y: auto; /* Ensure editor content scrolls */
+  font-size: 16px; /* Or your preferred base font size */
+}
+:deep(.ql-editor) {
+   min-height: 200px; /* Ensure a minimum editable area */
+   padding: 12px;
 }
 
 .loading-spinner-container {
@@ -209,6 +285,7 @@ onMounted(() => {
   justify-content: flex-end;
   align-items: center;
   gap: 0.75rem;
+  flex-shrink: 0;
 }
 
 .save-status {
