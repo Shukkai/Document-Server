@@ -124,16 +124,21 @@ def delete_file(file_id):
     if rec.owner_id != current_user.id and not current_user.is_admin:
         return {"error": "Access denied"}, 403
 
-    # Instead of deleting versions, we'll just delete the file record
-    # The versions will remain in the database and on disk
-    # This allows for potential file restoration later
-    db.session.delete(rec)
-    db.session.commit()
-    
-    return {
-        "message": "File deleted. Version history is preserved and can be restored later.",
-        "file_id": file_id
-    }, 200
+    try:
+        # Delete the file record - this will cascade delete all related versions
+        # due to the cascade relationship we just added
+        db.session.delete(rec)
+        db.session.commit()
+        
+        return {
+            "message": "File deleted successfully.",
+            "file_id": file_id
+        }, 200
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error deleting file {file_id}: {str(e)}")
+        return {"error": "Failed to delete file"}, 500
 
 @app.route('/list-deleted-files', methods=['GET'])
 @login_required

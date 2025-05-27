@@ -46,7 +46,7 @@ class File(db.Model):
     current_version = db.Column(db.Integer, default=1)
 
     folder = db.relationship('Folder', backref='files')
-    versions = db.relationship('FileVersion', backref='file', lazy=True, order_by='FileVersion.version_number.desc()')
+    versions = db.relationship('FileVersion', backref='file', lazy=True, order_by='FileVersion.version_number.desc()', cascade='all, delete-orphan')
 
     def get_latest_version(self):
         return FileVersion.query.filter_by(file_id=self.id).order_by(FileVersion.version_number.desc()).first()

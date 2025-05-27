@@ -331,7 +331,7 @@ async function handleDeleteFolder(folderId) {
   error.value = null
   
   try {
-    await axios.delete(`/folder/${folderId}`, { withCredentials: true })
+    await axios.delete(`/folders/${folderId}`, { withCredentials: true })
     emit('delete-folder', folderId)
     emit('refresh-tree')
   } catch (e) {
@@ -349,7 +349,7 @@ async function handleDeleteFile(fileId) {
   error.value = null
   
   try {
-    await axios.delete(`/file/${fileId}`, { withCredentials: true })
+    await axios.delete(`/delete/${fileId}`, { withCredentials: true })
     emit('delete-file', fileId)
     emit('refresh-tree')
     // Show success message

@@ -8,14 +8,49 @@
       <h2>Upload New File</h2>
       <div class="upload-controls">
         <input type="file" @change="onFileChange" />
-        <button :disabled="!selectedFile" @click="upload">Upload</button>
+        <div class="folder-selection">
+          <label for="folder-select">Select destination folder:</label>
+          <select id="folder-select" v-model="selectedFolderId" class="folder-select">
+            <option :value="null">Root folder</option>
+            <option v-for="folder in flat" :key="folder.id" :value="folder.id">
+              {{ folder.name }}
+            </option>
+          </select>
+        </div>
+        <button class="btn upload-btn" :disabled="!selectedFile" @click="upload">Upload</button>
       </div>
       <p class="upload-info">Upload a new file or create a new version of an existing file</p>
     </div>
 
+    <!-- ───────────── Create New Folder ───────────── -->
+    <div class="create-folder-section">
+      <h2>Create New Folder</h2>
+      <div class="create-folder-controls">
+        <div class="folder-input-group">
+          <label for="folder-name">Folder name:</label>
+          <input 
+            id="folder-name"
+            v-model="newFolderName" 
+            placeholder="Enter folder name" 
+            class="folder-input"
+            @keyup.enter="createFolder"
+          />
+        </div>
+        <button 
+          class="btn create-btn" 
+          :disabled="!newFolderName.trim()" 
+          @click="createFolder"
+        >
+          <span class="btn-icon">📁</span>
+          Create Folder
+        </button>
+      </div>
+      <p class="create-folder-info">Create a new folder to organize your files</p>
+    </div>
+
     <!-- ───────────── Folders / files ───────────── -->
     <section class="folder-section">
-      <h2>Folders</h2>
+      <h2>Your Folders & Files</h2>
 
       <!-- recursive tree -->
       <FolderTree
@@ -26,12 +61,6 @@
         @move-file="moveFile"
         @refresh-tree="loadFolders"
       />
-
-      <!-- create folder -->
-      <div class="folder-controls">
-        <input v-model="newFolderName" placeholder="New folder name" />
-        <button @click="createFolder">Create Folder</button>
-      </div>
     </section>
 
     <!-- Success/Error Messages -->
@@ -48,10 +77,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { sessionCache } from '@/router'
+import FolderTree from '@/components/FolderTree.vue'
 
 const router = useRouter()
 
@@ -59,18 +89,23 @@ const router = useRouter()
 const folders        = ref([])   // nested tree
 const flat           = ref([])   // flat list for <select>
 const selectedFile   = ref(null)
+const selectedFolderId = ref(null) // for upload destination
 const newFolderName  = ref('')
 const errorMessage   = ref('')
 const successMessage = ref('')
-const errorMessage = ref('')
-const loading = ref(false)
-const error = ref('')
+const loading        = ref(false)
 
 /* -------------------------------------------------------------- helpers */
 function flash (msg, kind = 'success') {
   if (kind === 'success') successMessage.value = msg
   else                    errorMessage.value   = msg
   setTimeout(() => { successMessage.value = errorMessage.value = '' }, 5000)
+}
+
+function handleErr(err) {
+  console.error('API Error:', err)
+  const message = err.response?.data?.error || err.message || 'An error occurred'
+  errorMessage.value = message
 }
 
 function onFileChange (e) { 
@@ -90,7 +125,11 @@ async function loadFolders () {
     folders.value  = root
     // flat list for dropdown:
     flat.value     = []
-    function walk(n){ flat.value.push({id:n.id, name:n.name}); n.children?.forEach(walk) }
+    function walk(n, depth = 0){ 
+      const indent = '  '.repeat(depth)
+      flat.value.push({id:n.id, name: `${indent}${n.name}`}); 
+      n.children?.forEach(child => walk(child, depth + 1)) 
+    }
     root.forEach(walk)
   } catch (err) { handleErr(err) }
 }
@@ -100,10 +139,17 @@ async function upload () {
   if (!selectedFile.value) return
   const fd = new FormData()
   fd.append('file', selectedFile.value)
+  
+  // Add folder_id if a folder is selected
+  if (selectedFolderId.value) {
+    fd.append('folder_id', selectedFolderId.value)
+  }
+  
   try {
     await axios.post('/upload', fd, { withCredentials:true })
     await loadFolders()
     selectedFile.value = null
+    selectedFolderId.value = null // Reset folder selection
     flash('File uploaded successfully')
   } catch (err) { handleErr(err) }
 }
@@ -111,8 +157,8 @@ async function upload () {
 async function createFolder () {
   if (!newFolderName.value) return
   try {
-    await axios.post('/folders', { name }, { withCredentials: true })
-    successMessage.value = `Folder "${name}" created successfully!`
+    await axios.post('/folders', { name: newFolderName.value }, { withCredentials: true })
+    successMessage.value = `Folder "${newFolderName.value}" created successfully!`
     newFolderName.value = ''
     await loadFolders()
     
@@ -152,6 +198,19 @@ async function deleteFile(id) {
   }
 }
 
+// Move file function
+async function moveFile(fileId, folderId) {
+  try {
+    await axios.put(`/files/${fileId}/move`, { folderId }, { withCredentials: true })
+    successMessage.value = 'File moved successfully!'
+    await loadFolders()
+    
+  } catch (err) {
+    console.error('Move file error:', err)
+    errorMessage.value = err.response?.data?.error || 'Failed to move file'
+  }
+}
+
 // Logout
 async function logout() {
   try {
@@ -172,11 +231,11 @@ function clearMessages() {
 }
 
 // Watch for messages and clear them
-const unwatchSuccess = $watch(successMessage, (newVal) => {
+watch(successMessage, (newVal) => {
   if (newVal) clearMessages()
 })
 
-const unwatchError = $watch(errorMessage, (newVal) => {
+watch(errorMessage, (newVal) => {
   if (newVal) clearMessages()
 })
 
@@ -231,7 +290,7 @@ onMounted(() => {
 
 .upload-section,
 .create-folder-section,
-.folders-section {
+.folder-section {
   background: white;
   padding: 2rem;
   border-radius: 12px;
@@ -241,7 +300,7 @@ onMounted(() => {
 
 .upload-section h2,
 .create-folder-section h2,
-.folders-section h2 {
+.folder-section h2 {
   margin: 0 0 1rem 0;
   color: #333;
 }
@@ -250,6 +309,54 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.upload-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.folder-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.folder-selection label {
+  font-weight: 600;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+.create-folder-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.folder-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.folder-input-group label {
+  font-weight: 600;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+.create-folder-info {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #666;
+  font-style: italic;
+}
+
+.btn-icon {
+  font-size: 1rem;
+  margin-right: 0.3rem;
 }
 
 .file-input {
@@ -272,10 +379,18 @@ onMounted(() => {
 }
 
 .folder-input {
-  flex: 1;
   padding: 0.75rem;
   border: 2px solid #e2e8f0;
   border-radius: 8px;
+  font-size: 1rem;
+  transition: border-color 0.2s ease;
+  background: white;
+}
+
+.folder-input:focus {
+  outline: none;
+  border-color: #4299e1;
+  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
 }
 
 .btn {
@@ -302,12 +417,18 @@ onMounted(() => {
 }
 
 .create-btn {
-  background: #48bb78;
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
   color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
 }
 
 .create-btn:hover:not(:disabled) {
-  background: #38a169;
+  background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(72, 187, 120, 0.3);
 }
 
 .logout-btn {
@@ -452,5 +573,24 @@ button:hover {
 button:disabled {
   background: #ccc;
   cursor: not-allowed;
+}
+
+/* ──────────── Responsive Design ──────────── */
+@media (max-width: 768px) {
+  .upload-controls,
+  .create-folder-controls {
+    gap: 0.75rem;
+  }
+  
+  .upload-section,
+  .create-folder-section,
+  .folder-section {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .folder-input {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
 }
 </style>
