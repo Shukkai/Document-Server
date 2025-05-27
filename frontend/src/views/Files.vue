@@ -1,87 +1,117 @@
 <!-- src/views/Files.vue -->
 <template>
-  <div class="files-container">
-    <h1>Your files</h1>
-
-    <!-- ───────────── Upload ───────────── -->
-    <div class="upload-section">
-      <h2>Upload New File</h2>
-      <div class="upload-controls">
-        <input type="file" @change="onFileChange" />
-        <div class="folder-selection">
-          <label for="folder-select">Select destination folder:</label>
-          <select id="folder-select" v-model="selectedFolderId" class="folder-select">
-            <option :value="null">Root folder</option>
-            <option v-for="folder in flat" :key="folder.id" :value="folder.id">
-              {{ folder.name }}
-            </option>
-          </select>
-        </div>
-        <button class="btn upload-btn" :disabled="!selectedFile" @click="upload">Upload</button>
+  <div class="files-page-container">
+    <header class="top-nav-header">
+      <div class="logo-area">
+        <span class="logo-icon">☁️</span> 
+        <h1>Cloud Document Center</h1>
       </div>
-      <p class="upload-info">Upload a new file or create a new version of an existing file</p>
-    </div>
-
-    <!-- ───────────── Create New Folder ───────────── -->
-    <div class="create-folder-section">
-      <h2>Create New Folder</h2>
-      <div class="create-folder-controls">
-        <div class="folder-input-group">
-          <label for="folder-name">Folder name:</label>
-          <input 
-            id="folder-name"
-            v-model="newFolderName" 
-            placeholder="Enter folder name" 
-            class="folder-input"
-            @keyup.enter="createFolder"
-          />
-        </div>
-        <div class="parent-folder-selection">
-          <label for="parent-folder-select">Create in folder:</label>
-          <select id="parent-folder-select" v-model="selectedParentFolderId" class="folder-select">
-            <option :value="null">Root folder</option>
-            <option v-for="folder in flat" :key="folder.id" :value="folder.id">
-              {{ folder.name }}
-            </option>
-          </select>
-        </div>
+      <nav class="top-nav">
         <button 
-          class="btn create-btn" 
-          :disabled="!newFolderName.trim()" 
-          @click="createFolder"
+          :class="['nav-button', { active: activeView === 'home' }]" 
+          @click="setActiveView('home')"
         >
-          <span class="btn-icon">📁</span>
-          Create Folder
+          <span class="icon">🏠</span> Home (Files & Folders)
         </button>
+        <button 
+          :class="['nav-button', { active: activeView === 'upload' }]" 
+          @click="setActiveView('upload')"
+        >
+          <span class="icon">📤</span> Upload File
+        </button>
+        <button 
+          :class="['nav-button', { active: activeView === 'createFolder' }]" 
+          @click="setActiveView('createFolder')"
+        >
+          <span class="icon">📁</span> Create Folder
+        </button>
+         <button class="nav-button logout-button" @click="logout">
+          <span class="icon">🚪</span> Logout
+        </button>
+      </nav>
+    </header>
+
+    <main class="main-content-area">
+      <!-- Conditionally rendered sections -->
+      <div v-if="activeView === 'upload'" class="upload-section content-section">
+        <h2>Upload New File</h2>
+        <div class="upload-controls">
+          <input type="file" @change="onFileChange" class="file-input"/>
+          <div class="folder-selection">
+            <label for="folder-select">Select destination folder:</label>
+            <select id="folder-select" v-model="selectedFolderId" class="folder-select">
+              <option :value="null">Root folder</option>
+              <option v-for="folder in flat" :key="folder.id" :value="folder.id">
+                {{ folder.name }}
+              </option>
+            </select>
+          </div>
+          <button class="btn upload-btn" :disabled="!selectedFile || loading" @click="upload">
+            <span v-if="loading && selectedFile" class="icon">⏳</span>
+            <span v-else class="icon">📤</span>
+            Upload
+          </button>
+        </div>
+        <p class="upload-info">Upload a new file or create a new version of an existing file.</p>
       </div>
-      <p class="create-folder-info">Create a new folder to organize your files</p>
-    </div>
 
-    <!-- ───────────── Folders / files ───────────── -->
-    <section class="folder-section">
-      <h2>Your Folders & Files</h2>
+      <div v-if="activeView === 'createFolder'" class="create-folder-section content-section">
+        <h2>Create New Folder</h2>
+        <div class="create-folder-controls">
+          <div class="folder-input-group">
+            <label for="folder-name">Folder name:</label>
+            <input 
+              id="folder-name"
+              v-model="newFolderName" 
+              placeholder="Enter folder name" 
+              class="folder-input"
+              @keyup.enter="createFolder"
+            />
+          </div>
+          <div class="parent-folder-selection">
+            <label for="parent-folder-select">Create in folder:</label>
+            <select id="parent-folder-select" v-model="selectedParentFolderId" class="folder-select">
+              <option :value="null">Root folder</option>
+              <option v-for="folder in flat" :key="folder.id" :value="folder.id">
+                {{ folder.name }}
+              </option>
+            </select>
+          </div>
+          <button 
+            class="btn create-btn" 
+            :disabled="!newFolderName.trim() || loading" 
+            @click="createFolder"
+          >
+            <span v-if="loading && newFolderName.trim()" class="icon">⏳</span>
+            <span v-else class="icon">📁</span>
+            Create Folder
+          </button>
+        </div>
+        <p class="create-folder-info">Create a new folder to organize your files.</p>
+      </div>
 
-      <!-- recursive tree -->
-      <FolderTree
-        :folders="folders"
-        :flat-folders="flat"
-        @delete-folder="deleteFolder"
-        @delete-file="deleteFile"
-        @move-file="moveFile"
-        @refresh-tree="loadFolders"
-      />
-    </section>
+      <section v-if="activeView === 'home'" class="folder-section content-section">
+        <h2>Your Folders & Files</h2>
+        <FolderTree
+          :folders="folders"
+          :flat-folders="flat" 
+          @delete-folder="deleteFolder"
+          @delete-file="deleteFile"
+          @move-file="moveFile"
+          @refresh-tree="loadFolders"
+        />
+      </section>
 
-    <!-- Success/Error Messages -->
-    <div v-if="successMessage" class="alert success">
-      ✅ {{ successMessage }}
-      <button @click="successMessage = ''" class="alert-close">×</button>
-    </div>
-    
-    <div v-if="errorMessage" class="alert error">
-      ⚠️ {{ errorMessage }}
-      <button @click="errorMessage = ''" class="alert-close">×</button>
-    </div>
+      <!-- Success/Error Messages -->
+      <div v-if="successMessage" class="alert success app-message">
+        ✅ {{ successMessage }}
+        <button @click="successMessage = ''" class="alert-close">×</button>
+      </div>
+      <div v-if="errorMessage" class="alert error app-message">
+        ⚠️ {{ errorMessage }}
+        <button @click="errorMessage = ''" class="alert-close">×</button>
+      </div>
+    </main>
   </div>
 </template>
 
@@ -89,12 +119,13 @@
 import { ref, onMounted, watch } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
-import { sessionCache } from '@/router'
+import { sessionCache, setSession } from '@/router'
 import FolderTree from '@/components/FolderTree.vue'
 
 const router = useRouter()
 
 /* ---------------------------------------------------------------- state */
+const activeView = ref('home')
 const folders        = ref([])   // nested tree
 const flat           = ref([])   // flat list for <select>
 const selectedFile   = ref(null)
@@ -105,6 +136,11 @@ const errorMessage   = ref('')
 const successMessage = ref('')
 const loading        = ref(false)
 
+/* ----------------------------------------------------------- view control */
+function setActiveView(viewName) {
+  activeView.value = viewName
+}
+
 /* -------------------------------------------------------------- helpers */
 function flash (msg, kind = 'success') {
   if (kind === 'success') successMessage.value = msg
@@ -113,9 +149,10 @@ function flash (msg, kind = 'success') {
 }
 
 function handleErr(err) {
+  loading.value = false
   console.error('API Error:', err)
   const message = err.response?.data?.error || err.message || 'An error occurred'
-  errorMessage.value = message
+  flash(message, 'error')
 }
 
 function onFileChange (e) { 
@@ -129,6 +166,7 @@ function onFileChange (e) {
 
 /* -------------------------------------------------------------- load tree */
 async function loadFolders () {
+  loading.value = true
   try {
     const { data } = await axios.get('/folders', { withCredentials:true })
     
@@ -154,12 +192,13 @@ async function loadFolders () {
       }
       root.forEach(walk)
     }
-  } catch (err) { handleErr(err) }
+  } catch (err) { handleErr(err) } finally { loading.value = false }
 }
 
 /* -------------------------------------------------------------- actions */
 async function upload () {
   if (!selectedFile.value) return
+  loading.value = true
   const fd = new FormData()
   fd.append('file', selectedFile.value)
   
@@ -174,11 +213,13 @@ async function upload () {
     selectedFile.value = null
     selectedFolderId.value = null // Reset folder selection
     flash('File uploaded successfully')
-  } catch (err) { handleErr(err) }
+    setActiveView('home') // Switch to home view after upload
+  } catch (err) { handleErr(err) } finally { loading.value = false }
 }
 
 async function createFolder () {
   if (!newFolderName.value) return
+  loading.value = true
   try {
     const payload = { 
       name: newFolderName.value,
@@ -194,17 +235,18 @@ async function createFolder () {
     newFolderName.value = ''
     selectedParentFolderId.value = null
     await loadFolders()
-    
+    setActiveView('home') // Switch to home view after creation
   } catch (err) {
     console.error('Create folder error:', err)
     errorMessage.value = err.response?.data?.error || 'Failed to create folder'
-  }
+  } finally { loading.value = false }
 }
 
 // Delete folder
 async function deleteFolder(id) {
   if (!confirm('Are you sure you want to delete this folder?')) return
   
+  loading.value = true
   try {
     await axios.delete(`/folders/${id}`, { withCredentials: true })
     successMessage.value = 'Folder deleted successfully!'
@@ -213,13 +255,14 @@ async function deleteFolder(id) {
   } catch (err) {
     console.error('Delete folder error:', err)
     errorMessage.value = err.response?.data?.error || 'Failed to delete folder'
-  }
+  } finally { loading.value = false }
 }
 
 // Delete file
 async function deleteFile(id) {
   if (!confirm('Are you sure you want to delete this file?')) return
   
+  loading.value = true
   try {
     await axios.delete(`/delete/${id}`, { withCredentials: true })
     successMessage.value = 'File deleted successfully!'
@@ -228,11 +271,12 @@ async function deleteFile(id) {
   } catch (err) {
     console.error('Delete file error:', err)
     errorMessage.value = err.response?.data?.error || 'Failed to delete file'
-  }
+  } finally { loading.value = false }
 }
 
 // Move file function
 async function moveFile(fileId, folderId) {
+  loading.value = true
   try {
     await axios.post('/move-file', { 
       file_id: fileId, 
@@ -244,18 +288,19 @@ async function moveFile(fileId, folderId) {
   } catch (err) {
     console.error('Move file error:', err)
     errorMessage.value = err.response?.data?.error || 'Failed to move file'
-  }
+  } finally { loading.value = false }
 }
 
 // Logout
 async function logout() {
+  loading.value = true
   try {
     await axios.post('/logout', {}, { withCredentials: true })
-    sessionCache.value = false
+    setSession(false)
     router.push('/')
   } catch (err) {
     console.error('Logout error:', err)
-  }
+  } finally { loading.value = false }
 }
 
 // Clear messages after 5 seconds
@@ -279,170 +324,166 @@ watch(errorMessage, (newVal) => {
 onMounted(() => {
   console.log('Files component mounted')
   loadFolders()
+  // Set initial view, perhaps from query param or local storage in future
+  setActiveView('home')
 })
 </script>
 
 <style scoped>
-.files-page {
+.files-page-container {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 2rem;
+  background-color: #f4f7f6; /* Light neutral background for the page */
 }
 
-.header {
-  background: white;
-  padding: 1rem 2rem;
-  border-radius: 12px;
-  margin-bottom: 2rem;
+.top-nav-header {
+  background: #ffffff; /* Clearer background - white */
+  color: #2d3748; /* Darker text for contrast */
+  padding: 0.75rem 2rem; /* Slightly adjusted padding */
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  border-bottom: 1px solid #e2e8f0; /* Subtle bottom border for separation */
+  position: sticky;
+  top: 0;
+  z-index: 1000;
 }
 
-.header h1 {
+.logo-area {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.logo-icon {
+  font-size: 1.7rem; /* Slightly adjusted */
+  color: #4299e1; /* Icon color - can be brand blue */
+}
+
+.top-nav-header h1 {
   margin: 0;
-  color: #333;
-  font-size: 1.8rem;
+  font-size: 1.3rem; /* Slightly adjusted */
+  font-weight: 600;
+  color: inherit; /* Inherits from .top-nav-header */
 }
 
-.main-content {
-  max-width: 1200px;
-  margin: 0 auto;
+.top-nav {
+  display: flex;
+  gap: 0.25rem; /* Tighter spacing for a cleaner look */
 }
 
-.debug-info {
-  background: rgba(255,255,255,0.9);
-  padding: 1rem;
-  border-radius: 8px;
-  margin-bottom: 2rem;
+.nav-button {
+  background-color: transparent;
+  color: #4a5568; /* Darker gray for nav buttons */
+  border: none; /* Remove border for a cleaner look initially */
+  padding: 0.6rem 1rem; /* Adjusted padding */
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
   font-size: 0.9rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-bottom: 2px solid transparent; /* For active state indicator */
 }
 
-.debug-info .error {
-  color: #e53e3e;
-  font-weight: bold;
+.nav-button:hover {
+  background-color: #edf2f7; /* Light gray hover */
+  color: #2d3748; /* Darker text on hover */
 }
 
-.upload-section,
-.create-folder-section,
-.folder-section {
+.nav-button.active {
+  color: #3b82f6; /* Blue for active text */
+  border-bottom: 2px solid #3b82f6; /* Blue bottom border for active state */
+  background-color: transparent; /* Ensure no competing background */
+}
+
+.logout-button {
+  margin-left: 1rem;
+  color: #e53e3e; /* Red for logout text */
+  background-color: transparent;
+}
+
+.logout-button:hover {
+  background-color: #fed7d7; /* Light red hover background */
+  color: #c53030; /* Darker red on hover */
+  border-bottom-color: transparent; /* Ensure no blue line from .nav-button.active if it was active */
+}
+
+.main-content-area {
+  padding: 2rem;
+  flex-grow: 1;
+}
+
+.content-section {
   background: white;
   padding: 2rem;
   border-radius: 12px;
   margin-bottom: 2rem;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 
-.upload-section h2,
-.create-folder-section h2,
-.folder-section h2 {
-  margin: 0 0 1rem 0;
-  color: #333;
-}
-
-.upload-area {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.upload-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.folder-selection {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.folder-selection label {
+.content-section h2 {
+  font-size: 1.6rem;
   font-weight: 600;
-  color: #333;
-  font-size: 0.9rem;
+  color: #2d3748;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
 }
 
+/* Input and select styling common to upload/create folder */
+.file-input,
+.folder-input,
+.folder-select {
+  padding: 0.75rem;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  margin-bottom: 1rem; /* Spacing */
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.upload-controls,
 .create-folder-controls {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
+.folder-selection,
+.parent-folder-selection,
 .folder-input-group {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
 }
 
-.folder-input-group label,
-.parent-folder-selection label {
-  font-weight: 600;
-  color: #333;
-  font-size: 0.9rem;
-}
-
-.parent-folder-selection {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.create-folder-info {
-  margin: 0;
-  font-size: 0.9rem;
-  color: #666;
-  font-style: italic;
-}
-
-.btn-icon {
-  font-size: 1rem;
-  margin-right: 0.3rem;
-}
-
-.file-input {
-  padding: 0.5rem;
-  border: 2px solid #e2e8f0;
-  border-radius: 8px;
-}
-
-.folder-select {
-  padding: 0.75rem;
-  border: 2px solid #e2e8f0;
-  border-radius: 8px;
-  background: white;
-}
-
-.create-folder-form {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-}
-
-.folder-input {
-  padding: 0.75rem;
-  border: 2px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 1rem;
-  transition: border-color 0.2s ease;
-  background: white;
-}
-
-.folder-input:focus {
-  outline: none;
-  border-color: #4299e1;
-  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+.folder-selection label,
+.parent-folder-selection label,
+.folder-input-group label {
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #4a5568;
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
   padding: 0.75rem 1.5rem;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 500;
   cursor: pointer;
-  font-weight: 600;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .btn:disabled {
@@ -450,173 +491,57 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-.upload-btn {
-  background: #4299e1;
-  color: white;
-}
-
-.upload-btn:hover:not(:disabled) {
-  background: #3182ce;
-}
-
+.upload-btn,
 .create-btn {
-  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  background: linear-gradient(135deg, #38a169 0%, #48bb78 100%); /* Green gradient */
   color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
+  align-self: flex-start; /* Align button to the start of flex container */
 }
 
+.upload-btn:hover:not(:disabled),
 .create-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
   transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(72, 187, 120, 0.3);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
 }
 
-.logout-btn {
-  background: #f56565;
-  color: white;
+.upload-info,
+.create-folder-info {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: #718096;
 }
 
-.logout-btn:hover {
-  background: #e53e3e;
-}
-
-.delete-btn {
-  background: #f56565;
-  color: white;
-  padding: 0.5rem 1rem;
-  font-size: 0.9rem;
-}
-
-.delete-btn:hover {
-  background: #e53e3e;
-}
-
-.download-btn {
-  background: #48bb78;
-  color: white;
-  padding: 0.5rem 1rem;
-  font-size: 0.9rem;
-  text-decoration: none;
-}
-
-.download-btn:hover {
-  background: #38a169;
-}
-
-.loading {
-  text-align: center;
-  padding: 2rem;
-  color: #666;
-}
-
-.no-folders,
-.no-files {
-  text-align: center;
-  padding: 2rem;
-  color: #666;
-  font-style: italic;
-}
-
-.folders-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.folder-item {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.folder-header {
-  background: #f7fafc;
-  padding: 1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.folder-header h3 {
-  margin: 0;
-  color: #333;
-}
-
-.files-list {
-  padding: 1rem;
-}
-
-.file-item {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.file-item:last-child {
-  border-bottom: none;
-}
-
-.file-icon {
-  font-size: 1.2rem;
-}
-
-.file-name {
-  flex: 1;
-  color: #333;
-}
-
-.file-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.alert {
+.app-message {
   position: fixed;
-  top: 2rem;
-  right: 2rem;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1050;
   padding: 1rem 1.5rem;
   border-radius: 8px;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  z-index: 1000;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  max-width: 400px;
 }
 
 .alert.success {
-  background: #c6f6d5;
-  color: #22543d;
-  border: 1px solid #9ae6b4;
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
 }
 
 .alert.error {
-  background: #fed7d7;
-  color: #742a2a;
-  border: 1px solid #feb2b2;
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
 }
 
 .alert-close {
-  background: none;
-  border: none;
-  font-size: 1.2rem;
-  cursor: pointer;
-  margin-left: 0.5rem;
+  background: none; border: none; font-size: 1.2rem;
+  cursor: pointer; margin-left: 1rem; opacity: 0.7;
+  color: inherit;
 }
+.alert-close:hover { opacity: 1; }
 
-button:hover {
-  background: #1565c0;
-}
-
-button:disabled {
-  background: #ccc;
-  cursor: not-allowed;
-}
+.icon { /* General icon styling if needed */ }
 
 /* ──────────── Responsive Design ──────────── */
 @media (max-width: 768px) {
