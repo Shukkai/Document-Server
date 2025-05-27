@@ -1,129 +1,38 @@
 <!-- src/views/Files.vue -->
 <template>
-  <div class="files-page">
-    <header class="header">
-      <h1>📁 File Manager</h1>
-      <div class="user-actions">
-        <button @click="logout" class="btn logout-btn">🚪 Logout</button>
+  <div class="files-container">
+    <h1>Your files</h1>
+
+    <!-- ───────────── Upload ───────────── -->
+    <div class="upload-section">
+      <h2>Upload New File</h2>
+      <div class="upload-controls">
+        <input type="file" @change="onFileChange" />
+        <button :disabled="!selectedFile" @click="upload">Upload</button>
       </div>
-    </header>
+      <p class="upload-info">Upload a new file or create a new version of an existing file</p>
+    </div>
 
-    <main class="main-content">
-      <!-- Debug info -->
-      <div class="debug-info">
-        <p>Loaded: {{ folders.length }} folders, {{ flat.length }} flat folders</p>
-        <p>Status: {{ loading ? 'Loading...' : 'Ready' }}</p>
-        <p v-if="error" class="error">Error: {{ error }}</p>
+    <!-- ───────────── Folders / files ───────────── -->
+    <section class="folder-section">
+      <h2>Folders</h2>
+
+      <!-- recursive tree -->
+      <FolderTree
+        :folders="folders"
+        :flat-folders="flat"
+        @delete-folder="deleteFolder"
+        @delete-file="deleteFile"
+        @move-file="moveFile"
+        @refresh-tree="loadFolders"
+      />
+
+      <!-- create folder -->
+      <div class="folder-controls">
+        <input v-model="newFolderName" placeholder="New folder name" />
+        <button @click="createFolder">Create Folder</button>
       </div>
-
-      <!-- Upload Section -->
-      <section class="upload-section">
-        <h2>📤 Upload Files</h2>
-        <div class="upload-area">
-          <input 
-            type="file" 
-            multiple 
-            @change="onFileSelect" 
-            class="file-input"
-          >
-          <p v-if="selectedFiles.length > 0">
-            Selected: {{ selectedFiles.length }} files
-          </p>
-          
-          <select v-model="targetFolderId" class="folder-select">
-            <option value="">📁 Root Folder</option>
-            <option 
-              v-for="folder in flat" 
-              :key="folder.id" 
-              :value="folder.id"
-            >
-              📁 {{ folder.name }}
-            </option>
-          </select>
-          
-          <button 
-            @click="uploadFiles" 
-            :disabled="selectedFiles.length === 0"
-            class="btn upload-btn"
-          >
-            🚀 Upload
-          </button>
-        </div>
-      </section>
-
-      <!-- Create Folder Section -->
-      <section class="create-folder-section">
-        <h2>➕ Create New Folder</h2>
-        <div class="create-folder-form">
-          <input 
-            v-model="newFolderName" 
-            placeholder="Folder name..."
-            class="folder-input"
-            @keyup.enter="createFolder"
-          >
-          <button 
-            @click="createFolder" 
-            :disabled="!newFolderName.trim()"
-            class="btn create-btn"
-          >
-            Create
-          </button>
-        </div>
-      </section>
-
-      <!-- Folders Display -->
-      <section class="folders-section">
-        <h2>📂 Your Folders and Files</h2>
-        <div v-if="loading" class="loading">Loading folders...</div>
-        <div v-else-if="folders.length === 0" class="no-folders">
-          No folders found. Create your first folder above!
-        </div>
-        <div v-else class="folders-list">
-          <div v-for="folder in folders" :key="folder.id" class="folder-item">
-            <div class="folder-header">
-              <h3>📁 {{ folder.name }}</h3>
-              <button 
-                v-if="folder.parent_id !== null" 
-                @click="deleteFolder(folder.id)"
-                class="btn delete-btn"
-              >
-                🗑️ Delete
-              </button>
-            </div>
-            
-            <div v-if="folder.files && folder.files.length > 0" class="files-list">
-              <div 
-                v-for="file in folder.files" 
-                :key="file.id" 
-                class="file-item"
-              >
-                <span class="file-icon">📄</span>
-                <span class="file-name">{{ file.name }}</span>
-                <div class="file-actions">
-                  <a 
-                    :href="`/download/${file.id}`" 
-                    target="_blank"
-                    class="btn download-btn"
-                  >
-                    📥 Download
-                  </a>
-                  <button 
-                    @click="deleteFile(file.id)"
-                    class="btn delete-btn"
-                  >
-                    🗑️ Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            <div v-else class="no-files">
-              This folder is empty
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
+    </section>
 
     <!-- Success/Error Messages -->
     <div v-if="successMessage" class="alert success">
@@ -146,105 +55,61 @@ import { sessionCache } from '@/router'
 
 const router = useRouter()
 
-// State
-const folders = ref([])
-const flat = ref([])
-const selectedFiles = ref([])
-const targetFolderId = ref('')
-const newFolderName = ref('')
+/* ---------------------------------------------------------------- state */
+const folders        = ref([])   // nested tree
+const flat           = ref([])   // flat list for <select>
+const selectedFile   = ref(null)
+const newFolderName  = ref('')
+const errorMessage   = ref('')
 const successMessage = ref('')
 const errorMessage = ref('')
 const loading = ref(false)
 const error = ref('')
 
-// Load folders from backend
-async function loadFolders() {
-  loading.value = true
-  error.value = ''
-  
-  try {
-    console.log('Loading folders...')
-    const response = await axios.get('/folders', { withCredentials: true })
-    console.log('Response:', response.data)
-    
-    const data = response.data
-    if (!data) {
-      console.log('No data received')
-      folders.value = []
-      flat.value = []
-      return
-    }
-    
-    // Handle single root folder or array
-    const rootFolders = Array.isArray(data) ? data : [data]
-    folders.value = rootFolders
-    
-    // Build flat list for dropdown
-    flat.value = []
-    function buildFlat(folder) {
-      if (folder && folder.id && folder.name) {
-        flat.value.push({ id: folder.id, name: folder.name })
-        if (folder.children && Array.isArray(folder.children)) {
-          folder.children.forEach(buildFlat)
-        }
-      }
-    }
-    
-    rootFolders.forEach(buildFlat)
-    console.log('Folders loaded:', folders.value)
-    console.log('Flat folders:', flat.value)
-    
-  } catch (err) {
-    console.error('Error loading folders:', err)
-    error.value = err.response?.data?.error || 'Failed to load folders'
-    if (err.response?.status === 401) {
-      sessionCache.value = false
-      router.push('/')
-    }
-  } finally {
-    loading.value = false
+/* -------------------------------------------------------------- helpers */
+function flash (msg, kind = 'success') {
+  if (kind === 'success') successMessage.value = msg
+  else                    errorMessage.value   = msg
+  setTimeout(() => { successMessage.value = errorMessage.value = '' }, 5000)
+}
+
+function onFileChange (e) { 
+  const file = e.target.files[0]
+  if (file) {
+    selectedFile.value = file
+    // Clear the input to allow selecting the same file again
+    e.target.value = ''
   }
 }
 
-// File selection
-function onFileSelect(event) {
-  const files = Array.from(event.target.files)
-  selectedFiles.value = files
-  console.log('Selected files:', files)
+/* -------------------------------------------------------------- load tree */
+async function loadFolders () {
+  try {
+    const { data } = await axios.get('/folders', { withCredentials:true })
+    const root     = Array.isArray(data) ? data : [data]   // ensure array
+    folders.value  = root
+    // flat list for dropdown:
+    flat.value     = []
+    function walk(n){ flat.value.push({id:n.id, name:n.name}); n.children?.forEach(walk) }
+    root.forEach(walk)
+  } catch (err) { handleErr(err) }
 }
 
-// Upload files
-async function uploadFiles() {
-  if (selectedFiles.value.length === 0) return
-  
+/* -------------------------------------------------------------- actions */
+async function upload () {
+  if (!selectedFile.value) return
+  const fd = new FormData()
+  fd.append('file', selectedFile.value)
   try {
-    for (const file of selectedFiles.value) {
-      const formData = new FormData()
-      formData.append('file', file)
-      
-      if (targetFolderId.value) {
-        formData.append('folder_id', targetFolderId.value)
-      }
-      
-      await axios.post('/upload', formData, { withCredentials: true })
-    }
-    
-    successMessage.value = `${selectedFiles.value.length} file(s) uploaded successfully!`
-    selectedFiles.value = []
-    document.querySelector('.file-input').value = ''
+    await axios.post('/upload', fd, { withCredentials:true })
     await loadFolders()
-    
-  } catch (err) {
-    console.error('Upload error:', err)
-    errorMessage.value = err.response?.data?.error || 'Upload failed'
-  }
+    selectedFile.value = null
+    flash('File uploaded successfully')
+  } catch (err) { handleErr(err) }
 }
 
-// Create folder
-async function createFolder() {
-  const name = newFolderName.value.trim()
-  if (!name) return
-  
+async function createFolder () {
+  if (!newFolderName.value) return
   try {
     await axios.post('/folders', { name }, { withCredentials: true })
     successMessage.value = `Folder "${name}" created successfully!`
@@ -580,30 +445,12 @@ onMounted(() => {
   margin-left: 0.5rem;
 }
 
-@media (max-width: 768px) {
-  .files-page {
-    padding: 1rem;
-  }
-  
-  .header {
-    flex-direction: column;
-    gap: 1rem;
-    text-align: center;
-  }
-  
-  .create-folder-form {
-    flex-direction: column;
-  }
-  
-  .file-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-  
-  .file-actions {
-    width: 100%;
-    justify-content: center;
-  }
+button:hover {
+  background: #1565c0;
+}
+
+button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
 }
 </style>
