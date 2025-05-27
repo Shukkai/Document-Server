@@ -294,31 +294,59 @@ def move_file():
     """
     JSON body:
       { "file_id": 123, "target_folder_id": 7 }
+    Note: target_folder_id can be null for moving to root folder
     """
     data         = request.json or {}
     file_id      = data.get('file_id')
     target_id    = data.get('target_folder_id')
 
-    rec          = File  .query.get_or_404(file_id)
-    target       = Folder.query.get_or_404(target_id)
+    rec = File.query.get_or_404(file_id)
+    
+    # Handle moving to root folder (target_id is None/null)
+    if target_id is None:
+        # Get user's root folder
+        target = Folder.query.filter_by(owner_id=current_user.id, parent_id=None).first()
+        if not target:
+            return {"error": "Root folder not found"}, 404
+    else:
+        target = Folder.query.get_or_404(target_id)
+        if target.owner_id != current_user.id:
+            return {"error": "Access denied to target folder"}, 403
 
     # ── ownership guards ──────────────────────────────────────
-    if rec.owner_id   != current_user.id:      return {"error": "Access denied"}, 403
-    if target.owner_id!= current_user.id:      return {"error": "Access denied"}, 403
+    if rec.owner_id != current_user.id:
+        return {"error": "Access denied to file"}, 403
+
+    # Check if file is already in the target folder
+    if rec.folder_id == target.id:
+        return {"error": "File is already in the target folder"}, 400
 
     # ── new disk location ------------------------------------
     dest_dir = folder_disk_path(target, current_user.username)
     os.makedirs(dest_dir, exist_ok=True)
 
     new_path = os.path.join(dest_dir, rec.filename)
-    os.rename(rec.path, new_path)
+    
+    # Check if a file with the same name already exists in destination
+    if os.path.exists(new_path) and new_path != rec.path:
+        return {"error": f"A file named '{rec.filename}' already exists in the destination folder"}, 400
+    
+    try:
+        # Use shutil.move instead of os.rename for better cross-device support
+        # and handling of moves between different directory levels
+        import shutil
+        shutil.move(rec.path, new_path)
+    except OSError as e:
+        return {"error": f"Failed to move file: {str(e)}"}, 500
+    except Exception as e:
+        return {"error": f"Unexpected error while moving file: {str(e)}"}, 500
 
     # ── update DB --------------------------------------------
     rec.folder_id = target.id
     rec.path      = new_path
     db.session.commit()
 
-    return {"message": "File moved"} , 200
+    return {"message": "File moved successfully"}, 200
 
 # ────────────── Auth & password flows (unchanged) ───────────────────────
 @app.route('/register', methods=['POST'])

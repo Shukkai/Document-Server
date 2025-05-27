@@ -2,10 +2,19 @@
   <div class="folder-tree-container">
     <!-- Error message -->
     <transition name="fade">
-      <div v-if="error" class="alert-message">
+      <div v-if="error" class="alert-message alert-error">
         <span class="icon">⚠️</span>
         {{ error }}
         <button class="alert-dismiss" @click="error = null">×</button>
+      </div>
+    </transition>
+
+    <!-- Success message -->
+    <transition name="fade">
+      <div v-if="successMessage" class="alert-message alert-success">
+        <span class="icon">✅</span>
+        {{ successMessage }}
+        <button class="alert-dismiss" @click="successMessage = null">×</button>
       </div>
     </transition>
 
@@ -105,7 +114,7 @@
                         <option disabled value="">Move to folder...</option>
                         <option
                           v-for="opt in flatOptions"
-                          :key="opt.id"
+                          :key="opt.id || 'root'"
                           :value="opt.id"
                           :disabled="opt.id === folder.id"
                         >
@@ -114,7 +123,7 @@
                       </select>
                       <button
                         class="btn btn-primary btn-sm"
-                        :disabled="!file.__target || isLoading"
+                        :disabled="file.__target === undefined || file.__target === '' || isLoading"
                         @click="move(file)"
                         title="Move file"
                       >
@@ -236,6 +245,7 @@ watch(() => props.folders, (newFolders) => {
 /* ---------- state ---------- */
 const isLoading = ref(false)
 const error = ref(null)
+const successMessage = ref(null)
 const selectedFile = ref(null)
 const expandedFolders = ref(new Set())
 
@@ -292,9 +302,37 @@ function flatten(folder, buffer = [], prefix = '') {
 }
 
 const flatOptions = computed(() => {
-  const list = []
-  props.folders.forEach(f => flatten(f, list))
-  return list
+  const list = [];
+  // Add root folder option first (with null ID for moving to root)
+  list.push({ id: null, label: 'Root folder' });
+
+  // Helper function to recursively add folders to the list
+  function addFoldersRecursively(folders, prefix = '') {
+    folders.forEach(folder => {
+      // Avoid adding a direct representation of the root folder if it's passed in props.folders
+      // especially if props.folders itself is the root and its name is 'root'
+      // The generic "Root folder" with id: null is already added.
+      if (folder.parent_id === null && (folder.name.toLowerCase() === 'root' || folder.name === 'Root folder')) {
+        if (folder.children && folder.children.length > 0) {
+          addFoldersRecursively(folder.children, ''); // Start with no prefix for children of actual root
+        }
+        return; // Skip adding the root object itself as a named option if it's like {name: 'root', ...}
+      }
+
+      list.push({ id: folder.id, label: `${prefix}${folder.name}` });
+      if (folder.children && folder.children.length > 0) {
+        addFoldersRecursively(folder.children, `${prefix}${folder.name}/`);
+      }
+    });
+  }
+
+  // Process props.folders. If props.folders is an array containing the root folder itself,
+  // the logic inside addFoldersRecursively will handle its children.
+  addFoldersRecursively(props.folders);
+
+  return list.filter((opt, index, self) => 
+    index === self.findIndex((o) => o.id === opt.id && o.label === opt.label)
+  );
 })
 
 /* ---------- folder expansion ---------- */
@@ -321,15 +359,15 @@ function closeVersionControl() {
 
 function handleVersionSuccess(message) {
   error.value = null
+  successMessage.value = message || 'Version operation completed successfully'
   emit('refresh-tree')
-  // Show success message
-  error.value = message || 'Version operation completed successfully'
   setTimeout(() => {
-    error.value = null
+    successMessage.value = null
   }, 3000)
 }
 
 function handleVersionError(message) {
+  successMessage.value = null
   error.value = message || 'Version operation failed'
   setTimeout(() => {
     error.value = null
@@ -340,18 +378,30 @@ function handleVersionError(message) {
 async function move(file) {
   isLoading.value = true
   error.value = null
+  successMessage.value = null
   
   try {
+    // Handle null value for root folder properly
+    const targetFolderId = file.__target === null ? null : file.__target
+    
     await axios.post(
       '/move-file',
-      { file_id: file.id, target_folder_id: file.__target },
+      { file_id: file.id, target_folder_id: targetFolderId },
       { withCredentials: true }
     )
     file.__target = ''          // reset dropdown after success
     emit('refresh-tree')        // parent reloads -> rerender
+    
+    successMessage.value = 'File moved successfully!'
+    setTimeout(() => {
+      successMessage.value = null
+    }, 3000)
   } catch (e) {
     error.value = e.response?.data?.error || 'Move failed'
     console.error('Move failed:', e)
+    setTimeout(() => {
+      error.value = null
+    }, 5000)
   } finally {
     isLoading.value = false
   }
@@ -381,19 +431,22 @@ async function handleDeleteFile(fileId) {
   
   isLoading.value = true
   error.value = null
+  successMessage.value = null
   
   try {
     await axios.delete(`/delete/${fileId}`, { withCredentials: true })
     emit('delete-file', fileId)
     emit('refresh-tree')
-    // Show success message
-    error.value = 'File deleted successfully. Version history is preserved.'
+    successMessage.value = 'File deleted successfully. Version history is preserved.'
     setTimeout(() => {
-      error.value = null
+      successMessage.value = null
     }, 3000)
   } catch (e) {
     error.value = e.response?.data?.error || 'Delete failed'
     console.error('Delete file failed:', e)
+    setTimeout(() => {
+      error.value = null
+    }, 5000)
   } finally {
     isLoading.value = false
   }
@@ -742,15 +795,25 @@ async function handleDeleteFile(fileId) {
 
 /* ──────────── Alert Message ──────────── */
 .alert-message {
-  background: #fed7d7;
-  color: #c53030;
-  border: 1px solid #feb2b2;
   padding: 1rem;
   border-radius: 8px;
   display: flex;
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 1rem;
+  border: 1px solid transparent;
+}
+
+.alert-error {
+  background: #fed7d7; /* Light red */
+  color: #c53030;     /* Dark red */
+  border-color: #feb2b2; /* Reddish border */
+}
+
+.alert-success {
+  background: #d4edda; /* Light green */
+  color: #155724;     /* Dark green */
+  border-color: #c3e6cb; /* Greenish border */
 }
 
 .alert-dismiss {

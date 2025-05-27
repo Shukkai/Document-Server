@@ -234,7 +234,10 @@ async function deleteFile(id) {
 // Move file function
 async function moveFile(fileId, folderId) {
   try {
-    await axios.put(`/files/${fileId}/move`, { folderId }, { withCredentials: true })
+    await axios.post('/move-file', { 
+      file_id: fileId, 
+      target_folder_id: folderId 
+    }, { withCredentials: true })
     successMessage.value = 'File moved successfully!'
     await loadFolders()
     
