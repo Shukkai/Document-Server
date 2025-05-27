@@ -348,6 +348,128 @@ def move_file():
 
     return {"message": "File moved successfully"}, 200
 
+# ────────────── Text File Edit (New Endpoints) ───────────────────────────
+@app.route('/file-content/<int:file_id>', methods=['GET'])
+@login_required
+def get_file_content(file_id):
+    file = File.query.get_or_404(file_id)
+    if file.owner_id != current_user.id: # Add admin check if necessary: and not current_user.is_admin
+        return {"error": "Access denied to file"}, 403
+
+    # Basic check for text files, can be expanded (e.g., check file.mimetype)
+    if not file.filename.lower().endswith(('.txt', '.md', '.py', '.js', '.json', '.yaml', '.yml', '.html', '.css')):
+        return {"error": "File is not a supported editable text file type"}, 400
+
+    try:
+        # Ensure the path stored in db is the actual current path
+        # (especially if versioning updates file.path)
+        actual_path = file.path 
+        if not os.path.exists(actual_path):
+             # Fallback to version path if main path deleted or points to a version in .version
+            if file.current_version:
+                latest_version = FileVersion.query.filter_by(file_id=file.id, version_number=file.current_version).first()
+                if latest_version and os.path.exists(latest_version.path):
+                    actual_path = latest_version.path
+                else:
+                    return {"error": "File content not found on disk"}, 404
+            else: # No versions and main path missing
+                return {"error": "File content not found on disk"}, 404
+
+
+        with open(actual_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return jsonify({"content": content, "filename": file.filename, "mimetype": file.mimetype})
+    except Exception as e:
+        return {"error": f"Error reading file: {str(e)}"}, 500
+
+@app.route('/file-content/<int:file_id>', methods=['POST'])
+@login_required
+def save_file_content(file_id):
+    file = File.query.get_or_404(file_id)
+    if file.owner_id != current_user.id: # Add admin check if necessary: and not current_user.is_admin
+        return {"error": "Access denied to file"}, 403
+
+    if not file.filename.lower().endswith(('.txt', '.md', '.py', '.js', '.json', '.yaml', '.yml', '.html', '.css')):
+        return {"error": "File is not a supported editable text file type"}, 400
+
+    data = request.json
+    new_content = data.get('content')
+    if new_content is None:
+        return {"error": "No content provided"}, 400
+
+    try:
+        # This will overwrite the current file. 
+        # TODO: Integrate with versioning if desired.
+        # For versioning, you'd copy the old file to .versions, then write the new one,
+        # then create a new FileVersion record and update file.current_version and file.path.
+        
+        actual_path = file.path
+        # Ensure directory exists if it somehow got deleted (though unlikely for an existing file)
+        os.makedirs(os.path.dirname(actual_path), exist_ok=True)
+
+        with open(actual_path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        
+        # Update modified time (optional, but good practice)
+        file.updated_at = datetime.utcnow()
+        db.session.commit()
+        
+        return {"message": "File saved successfully"}
+    except Exception as e:
+        db.session.rollback()
+        return {"error": f"Error saving file: {str(e)}"}, 500
+
+# ────────────── Rename File ──────────────────────────────────────────────
+@app.route('/rename-file/<int:file_id>', methods=['POST'])
+@login_required
+def rename_file(file_id):
+    file_to_rename = File.query.get_or_404(file_id)
+    if file_to_rename.owner_id != current_user.id: # Add admin check if necessary
+        return {"error": "Access denied to file"}, 403
+
+    data = request.json
+    new_filename = data.get('new_filename')
+
+    if not new_filename or not new_filename.strip():
+        return {"error": "New filename cannot be empty"}, 400
+    
+    new_filename = secure_filename(new_filename.strip())
+    if not new_filename: # secure_filename might return empty if the name is really bad
+        return {"error": "Invalid new filename"}, 400
+
+    if new_filename == file_to_rename.filename:
+        return {"message": "Filename is the same, no changes made"}, 200 # Or a 400 if preferred
+
+    # Determine the directory of the file
+    current_dir = os.path.dirname(file_to_rename.path)
+    new_path = os.path.join(current_dir, new_filename)
+
+    if os.path.exists(new_path):
+        return {"error": f"A file named '{new_filename}' already exists in this folder"}, 400
+
+    try:
+        # Rename on disk
+        os.rename(file_to_rename.path, new_path)
+
+        # Update database
+        file_to_rename.filename = new_filename
+        file_to_rename.path = new_path
+        file_to_rename.updated_at = datetime.utcnow() # Update modified time
+        db.session.commit()
+
+        # Note: This does not rename files in the .version directory.
+        # Version history will still point to old version paths with old names.
+        # If versions also need renaming, that would be significantly more complex.
+
+        return {"message": "File renamed successfully", "new_filename": new_filename, "new_path": new_path}, 200
+    except Exception as e:
+        db.session.rollback()
+        # Attempt to rollback rename if DB fails? Complex. For now, log and error.
+        current_app.logger.error(f"Error renaming file {file_id}: {str(e)}")
+        # If os.rename succeeded but DB failed, we have a discrepancy.
+        # A more robust solution might try to rename back or use a two-phase commit pattern.
+        return {"error": f"Failed to rename file: {str(e)}"}, 500
+
 # ────────────── Auth & password flows (unchanged) ───────────────────────
 @app.route('/register', methods=['POST'])
 def register():

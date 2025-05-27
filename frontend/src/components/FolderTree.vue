@@ -146,6 +146,27 @@
                       </a>
 
                       <button
+                        v-if="isTextEditable(file)"
+                        class="btn btn-warning btn-sm"
+                        @click="openTextEditor(file)"
+                        :disabled="isLoading"
+                        title="Edit file content"
+                      >
+                        <span class="icon">✏️</span>
+                        Edit
+                      </button>
+
+                      <button
+                        class="btn btn-secondary btn-sm" 
+                        @click="openRenameModal(file)"
+                        :disabled="isLoading"
+                        title="Rename file"
+                      >
+                        <span class="icon">🏷️</span>
+                        Rename
+                      </button>
+
+                      <button
                         class="btn btn-info btn-sm"
                         @click="showVersionControl(file)"
                         :disabled="isLoading"
@@ -217,6 +238,24 @@
         </div>
       </div>
     </div>
+
+    <!-- Text Editor Modal -->
+    <TextEditor
+      v-if="editingFile"
+      :fileId="editingFile.id"
+      :initialFilename="editingFile.name"
+      @close="closeTextEditor"
+      @save-success="handleSaveSuccess"
+    />
+
+    <!-- Rename File Modal -->
+    <RenameFileModal
+      v-if="fileToRename"
+      :fileId="fileToRename.id"
+      :currentFilename="fileToRename.name"
+      @close="closeRenameModal"
+      @rename-success="handleRenameSuccess"
+    />
   </div>
 </template>
 
@@ -225,6 +264,8 @@ import { computed, defineProps, defineEmits, ref, watch } from 'vue'
 import axios from 'axios'
 import FolderTree from './FolderTree.vue'
 import FileVersion from './FileVersion.vue'
+import TextEditor from './TextEditor.vue'
+import RenameFileModal from './RenameFileModal.vue'
 
 /* ---------- props / emits ---------- */
 const props = defineProps({ folders: { type: Array, required: true } })
@@ -247,7 +288,9 @@ const isLoading = ref(false)
 const error = ref(null)
 const successMessage = ref(null)
 const selectedFile = ref(null)
+const editingFile = ref(null)
 const expandedFolders = ref(new Set())
+const fileToRename = ref(null)
 
 /* ---------- helpers ---------- */
 const baseURL = axios.defaults.baseURL
@@ -374,6 +417,42 @@ function handleVersionError(message) {
   }, 5000)
 }
 
+/* ---------- text editor functions ---------- */
+function openTextEditor(file) {
+  editingFile.value = file;
+}
+
+function closeTextEditor() {
+  editingFile.value = null;
+}
+
+function handleSaveSuccess() {
+  successMessage.value = 'File content saved successfully!';
+  closeTextEditor();
+  emit('refresh-tree'); // Refresh folder tree to show updated file stats (e.g., modified date if backend updates it)
+   setTimeout(() => {
+    successMessage.value = null;
+  }, 3000);
+}
+
+/* ---------- rename file functions ---------- */
+function openRenameModal(file) {
+  fileToRename.value = file;
+}
+
+function closeRenameModal() {
+  fileToRename.value = null;
+}
+
+function handleRenameSuccess(eventPayload) {
+  successMessage.value = `File renamed to "${eventPayload.newFilename}" successfully!`;
+  closeRenameModal();
+  emit('refresh-tree'); 
+  setTimeout(() => {
+    successMessage.value = null;
+  }, 3000);
+}
+
 /* ---------- move file ---------- */
 async function move(file) {
   isLoading.value = true
@@ -450,6 +529,17 @@ async function handleDeleteFile(fileId) {
   } finally {
     isLoading.value = false
   }
+}
+
+/* ---------- helper functions ---------- */
+// Helper to check if a file is text-editable by filename extension
+const editableTextExtensions = ['.txt', '.md', '.py', '.js', '.json', '.yaml', '.yml', '.html', '.css'];
+function isTextEditable(file) {
+  if (!file || !file.name) return false;
+  const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+  return editableTextExtensions.includes(extension);
+  // Or, you could check based on file.mimetype if it's reliable
+  // return file.mimetype && file.mimetype.startsWith('text/'); 
 }
 </script>
 
@@ -761,6 +851,26 @@ async function handleDeleteFile(fileId) {
 .btn-danger:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 2px 4px rgba(245, 101, 101, 0.3);
+}
+
+.btn-warning {
+  background: linear-gradient(135deg, #ecc94b 0%, #d69e2e 100%);
+  color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(236, 201, 75, 0.3);
+}
+
+.btn-secondary {
+  background: linear-gradient(135deg, #a0aec0 0%, #718096 100%);
+  color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(160, 174, 192, 0.3);
 }
 
 /* ──────────── No Files ──────────── */
