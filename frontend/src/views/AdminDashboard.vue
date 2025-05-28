@@ -10,9 +10,15 @@
           </h1>
           <p class="dashboard-subtitle">Manage users and oversee system-wide file operations</p>
         </div>
-        <div class="admin-badge">
-          <span class="badge-icon">🛡️</span>
-          <span class="badge-text">Administrator</span>
+        <div class="header-actions">
+          <button @click="goToMainPage" class="action-btn main-page-btn">
+            <span class="btn-icon">🏠</span>
+            Go to Main Page
+          </button>
+          <div class="admin-badge">
+            <span class="badge-icon">🛡️</span>
+            <span class="badge-text">Administrator</span>
+          </div>
         </div>
       </div>
     </div>
@@ -46,10 +52,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import axios from 'axios';
 import AdminUserFileBrowser from '../components/AdminUserFileBrowser.vue';
 
 const isAdminUser = ref(false);
+const router = useRouter();
 
 // Fetch admin status
 onMounted(async () => {
@@ -65,6 +73,11 @@ onMounted(async () => {
     isAdminUser.value = false;
   }
 });
+
+// Method to navigate to the main page
+function goToMainPage() {
+  router.push('/files');
+}
 </script>
 
 <style scoped>
@@ -115,6 +128,39 @@ onMounted(async () => {
   font-size: 1rem;
   color: #596780;
   font-weight: 400;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.2rem;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #fff;
+  color: #2c3e50;
+}
+
+.action-btn:hover {
+  border-color: #1890ff;
+  color: #1890ff;
+}
+
+.btn-icon {
+  font-size: 1rem;
+}
+
+.main-page-btn {
+  /* Specific styles if needed, otherwise inherits from .action-btn */
 }
 
 .admin-badge {
@@ -212,7 +258,12 @@ onMounted(async () => {
   .header-content {
     flex-direction: column;
     text-align: center;
-    gap: 1rem;
+    gap: 1.5rem; /* Increased gap for better separation */
+  }
+  
+  .header-actions {
+    flex-direction: column;
+    gap: 0.8rem;
   }
   
   .dashboard-title {
