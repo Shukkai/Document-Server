@@ -245,6 +245,7 @@
           
           <FileVersion 
             :fileId="selectedFile.id"
+            :isAdmin="currentUserIsAdmin"
             @success="handleVersionSuccess"
             @error="handleVersionError"
           />
@@ -355,7 +356,7 @@
 </template>
 
 <script setup>
-import { computed, defineProps, defineEmits, ref, watch } from 'vue'
+import { computed, defineProps, defineEmits, ref, watch, onMounted } from 'vue'
 import axios from 'axios'
 import FolderTree from './FolderTree.vue'
 import FileVersion from './FileVersion.vue'
@@ -389,6 +390,23 @@ const fileToRename = ref(null)
 const fileToReview = ref(null)
 const users = ref([])
 const selectedReviewer = ref(null)
+const currentUserIsAdmin = ref(false)
+
+onMounted(async () => {
+  try {
+    // Adjust the endpoint if yours is different (e.g., '/user-info')
+    const response = await axios.get('/session-status'); 
+    if (response.data && response.data.authenticated && response.data.user) {
+      currentUserIsAdmin.value = !!response.data.user.is_admin; // Ensure boolean
+    } else {
+      // Not authenticated or user data missing, assume not admin
+      currentUserIsAdmin.value = false;
+    }
+  } catch (error) {
+    console.error('Error fetching user session status in FolderTree:', error);
+    currentUserIsAdmin.value = false; // On error, assume not admin
+  }
+});
 
 /* ---------- helpers ---------- */
 const baseURL = axios.defaults.baseURL

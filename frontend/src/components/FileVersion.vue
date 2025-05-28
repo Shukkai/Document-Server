@@ -50,12 +50,12 @@
               <button @click="downloadVersion(version)" class="action-btn">
                 Download
               </button>
-              <button v-if="!version.is_current" 
+              <button v-if="isAdmin && !version.is_current" 
                       @click="restoreVersion(version)" 
                       class="action-btn restore">
                 Restore
               </button>
-              <button v-if="!version.is_current" 
+              <button v-if="isAdmin && !version.is_current" 
                       @click="deleteVersion(version)" 
                       class="action-btn delete">
                 Delete
@@ -173,6 +173,10 @@ export default {
     fileId: {
       type: Number,
       required: true
+    },
+    isAdmin: {
+      type: Boolean,
+      default: false
     }
   },
   data() {

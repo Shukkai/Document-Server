@@ -955,16 +955,27 @@ def get_file_versions(file_id):
 @app.route('/restore-version/<int:file_id>/<int:version_number>', methods=['POST'])
 @login_required
 def restore_version(file_id, version_number):
+    if not current_user.is_admin:
+        return {"error": "Admin access required to restore versions"}, 403
+        
     file = File.query.get_or_404(file_id)
-    if file.owner_id != current_user.id and not current_user.is_admin:
-        return {"error": "Access denied"}, 403
+    # Admin can restore versions for any user, so owner_id check might be removed or adjusted based on policy
+    # For now, let's assume admin can restore any file they have access to query.
+    # if file.owner_id != current_user.id and not current_user.is_admin:
+    #     return {"error": "Access denied"}, 403
 
     version = FileVersion.query.filter_by(file_id=file_id, version_number=version_number).first_or_404()
     
     # Create new version from the restored version
-    # Get the next version number by checking the highest existing version
     new_version_number = get_next_version_number(file_id)
-    version_dir = get_version_dir(current_user.username)
+    
+    # Determine the owner of the file to correctly place the version in their .version directory
+    file_owner = User.query.get(file.owner_id)
+    if not file_owner:
+        return {"error": "File owner not found, cannot restore version"}, 500
+    owner_username = file_owner.username
+    
+    version_dir = get_version_dir(owner_username) # Use owner's username
     os.makedirs(version_dir, exist_ok=True)
     new_version_path = os.path.join(version_dir, f"{file_id}_v{new_version_number}_{secure_filename(file.filename)}")
     
@@ -977,18 +988,25 @@ def restore_version(file_id, version_number):
         file_id=file.id,
         version_number=new_version_number,
         path=new_version_path,
-        comment=f"Restored from version {version_number}"
+        comment=f"Restored from version {version_number} by admin {current_user.username}" # Added admin info to comment
     )
     
     # Update file's current version and path
+    # The main file.path should point to the live file, which is now this new version.
+    # The live file itself will be a copy of this new version content.
     file.current_version = new_version_number
-    file.path = new_version_path
+    # Ensure the main file.path is updated if it's not already reflecting the latest content structure
+    # For simplicity, we assume file.path points to the location of the live current version.
+    # We need to copy the content of new_version_path to file.path
+    if file.path != new_version_path: # Avoid copying if paths are already the same (e.g. if File.path was updated by upload_version)
+        shutil.copy2(new_version_path, file.path)
     
     db.session.add(new_version)
     db.session.commit()
     
+    current_app.logger.info(f"Admin {current_user.username} restored file {file.id} to V{version_number} (new version created: V{new_version_number})")
     return {
-        "message": f"Successfully restored version {version_number}",
+        "message": f"Successfully restored version {version_number}. New version {new_version_number} created.",
         "new_version_number": new_version_number
     }
 
@@ -1045,29 +1063,38 @@ def get_version_content(file_id, version_number):
 @app.route('/delete-version/<int:file_id>/<int:version_number>', methods=['DELETE'])
 @login_required
 def delete_version(file_id, version_number):
+    if not current_user.is_admin:
+        return {"error": "Admin access required to delete versions"}, 403
+
     file = File.query.get_or_404(file_id)
-    if file.owner_id != current_user.id and not current_user.is_admin:
-        return {"error": "Access denied"}, 403
+    # Admin can delete versions for any file.
 
     version = FileVersion.query.filter_by(file_id=file_id, version_number=version_number).first_or_404()
     
-    # Don't allow deleting the current version
+    # Don't allow deleting the current version, even for admins, as it can lead to inconsistencies.
+    # Admin should first restore to another version if they want to delete the one currently active.
     if version.version_number == file.current_version:
-        return {"error": "Cannot delete current version"}, 400
+        return {"error": "Cannot delete the current live version. Restore to another version first."}, 400
         
-    # Don't allow deleting the only version
+    # Don't allow deleting the only version if it's not the current one (though this case is less likely if above check is done).
     if FileVersion.query.filter_by(file_id=file_id).count() <= 1:
-        return {"error": "Cannot delete the only version"}, 400
+        return {"error": "Cannot delete the only version of a file."}, 400
     
     try:
-        os.remove(version.path)
-    except FileNotFoundError:
-        pass
+        version_path = version.path # Store path before deleting record
+        db.session.delete(version)
+        db.session.commit() # Commit DB changes first
         
-    db.session.delete(version)
-    db.session.commit()
-    
-    return {"message": f"Version {version_number} deleted successfully"}
+        # Then delete the file from disk
+        if os.path.exists(version_path):
+            os.remove(version_path)
+        
+        current_app.logger.info(f"Admin {current_user.username} deleted V{version_number} of file {file.id} from path {version_path}")
+        return {"message": f"Version {version_number} deleted successfully"}
+    except Exception as e:
+        db.session.rollback() # Rollback DB if disk operation fails or other error
+        current_app.logger.error(f"Admin {current_user.username} failed to delete V{version_number} of file {file.id}: {str(e)}", exc_info=True)
+        return {"error": f"Failed to delete version: {str(e)}"}, 500
 
 @app.route('/restore-file/<int:file_id>', methods=['POST'])
 @login_required
@@ -1148,10 +1175,13 @@ def restore_to_version(file_id, version_number):
     """
     Directly restore a file to a specific version, replacing the current version.
     This is different from restore-version which creates a new version.
+    ADMIN ONLY.
     """
+    if not current_user.is_admin:
+        return {"error": "Admin access required to directly restore to a version"}, 403
+
     file = File.query.get_or_404(file_id)
-    if file.owner_id != current_user.id and not current_user.is_admin:
-        return {"error": "Access denied"}, 403
+    # Admin can perform this for any file, so owner check is implicitly covered by admin role.
 
     # Get the target version
     target_version = FileVersion.query.filter_by(file_id=file_id, version_number=version_number).first_or_404()
@@ -1159,36 +1189,33 @@ def restore_to_version(file_id, version_number):
     if not os.path.exists(target_version.path):
         return {"error": "Version file not found"}, 404
 
-    # Create backup of current version before replacing
-    current_version = FileVersion.query.filter_by(file_id=file_id, version_number=file.current_version).first()
-    if current_version and os.path.exists(current_version.path):
-        backup_path = os.path.join(os.path.dirname(current_version.path), 
-                                 f"backup_v{current_version.version_number}_{os.path.basename(file.filename)}")
-        import shutil
-        shutil.copy2(current_version.path, backup_path)
+    # No backup needed as this is an admin action, and it's a direct replacement.
+    # If backup is desired, it can be added back.
 
-    # Replace current version with target version
+    # Replace current version content with target version content
     try:
         import shutil
-        shutil.copy2(target_version.path, file.path)
+        # The file.path should point to the live content file.
+        # We are overwriting the live content with the content of the target_version.
+        shutil.copy2(target_version.path, file.path) 
         
-        # Update file's current version
+        # Update file's current version number in the database
         file.current_version = version_number
         
-        # Update the version record's path to point to the new location
-        target_version.path = file.path
-        
+        # The FileVersion.path for target_version already points to its historical content.
+        # We are NOT changing FileVersion paths here. We are changing the LIVE file content (file.path)
+        # and updating which version number is considered current (file.current_version).
+
         db.session.commit()
         
+        current_app.logger.info(f"Admin {current_user.username} directly restored file {file.id} to V{version_number}. Live file content updated.")
         return {
-            "message": f"Successfully restored to version {version_number}",
+            "message": f"Successfully restored file content to version {version_number}",
             "current_version": version_number
         }
     except Exception as e:
-        # If something goes wrong, try to restore from backup
-        if 'backup_path' in locals() and os.path.exists(backup_path):
-            shutil.copy2(backup_path, file.path)
         db.session.rollback()
+        current_app.logger.error(f"Admin {current_user.username} failed to restore file {file.id} to V{version_number}: {str(e)}", exc_info=True)
         return {"error": f"Failed to restore version: {str(e)}"}, 500
 
 @app.route('/compare-versions/<int:file_id>/<int:version1>/<int:version2>', methods=['GET'])
