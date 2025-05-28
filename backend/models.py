@@ -87,6 +87,8 @@ class DocumentReview(db.Model):
     comments = db.Column(db.Text, nullable=True)
     requested_at = db.Column(db.DateTime, server_default=db.func.now())
     reviewed_at = db.Column(db.DateTime, nullable=True)
+    original_version = db.Column(db.Integer, nullable=True)  # Version before changes
+    modified_version = db.Column(db.Integer, nullable=True)  # Version with changes
 
     __table_args__ = (
         db.Index("ix_review_status", "status"),

@@ -413,23 +413,51 @@ def save_file_content(file_id):
         return {"error": "No content provided"}, 400
 
     try:
-        # This will overwrite the current file. 
-        # TODO: Integrate with versioning if desired.
-        # For versioning, you'd copy the old file to .versions, then write the new one,
-        # then create a new FileVersion record and update file.current_version and file.path.
+        # Create a version of the current file before modifying it
+        username = User.query.get(file.owner_id).username
+        version_dir = get_version_dir(username)
+        os.makedirs(version_dir, exist_ok=True)
         
+        # Get the next version number
+        next_version = (file.current_version or 0) + 1
+        
+        # Create version file path
+        base_name = os.path.splitext(file.filename)[0]
+        ext = os.path.splitext(file.filename)[1]
+        version_filename = f"{base_name}_v{next_version}{ext}"
+        version_path = os.path.join(version_dir, version_filename)
+        
+        # Copy current content to version file (if file exists)
+        if os.path.exists(file.path):
+            import shutil
+            shutil.copy2(file.path, version_path)
+        else:
+            # If original file doesn't exist, create empty version
+            with open(version_path, 'w', encoding='utf-8') as f:
+                f.write('')
+        
+        # Create version record
+        version_record = FileVersion(
+            file_id=file_id,
+            version_number=next_version,
+            path=version_path,
+            comment="Auto-created before content edit"
+        )
+        db.session.add(version_record)
+        
+        # Now save the new content to the main file
         actual_path = file.path
-        # Ensure directory exists if it somehow got deleted (though unlikely for an existing file)
         os.makedirs(os.path.dirname(actual_path), exist_ok=True)
 
         with open(actual_path, 'w', encoding='utf-8') as f:
             f.write(new_content)
         
-        # Update modified time (optional, but good practice)
+        # Update file record
+        file.current_version = next_version
         file.updated_at = datetime.utcnow()
         db.session.commit()
         
-        return {"message": "File saved successfully"}
+        return {"message": "File saved successfully", "version": next_version}
     except Exception as e:
         db.session.rollback()
         return {"error": f"Error saving file: {str(e)}"}, 500
@@ -637,12 +665,18 @@ def request_review(file_id):
         return {"error": "Cannot assign review to yourself"}, 400
     
     try:
+        # Get the previous version (before current changes) and current version
+        current_version = file.current_version or 1
+        previous_version = current_version - 1 if current_version > 1 else None
+        
         # Create review record
         review = DocumentReview(
             file_id=file_id,
             reviewer_id=reviewer_id,
             requester_id=current_user.id,
-            status='pending'
+            status='pending',
+            original_version=previous_version,
+            modified_version=current_version
         )
         db.session.add(review)
         
@@ -680,7 +714,10 @@ def get_my_reviews():
         "status": review.status,
         "requested_at": review.requested_at.isoformat(),
         "reviewed_at": review.reviewed_at.isoformat() if review.reviewed_at else None,
-        "comments": review.comments
+        "comments": review.comments,
+        "original_version": review.original_version,
+        "modified_version": review.modified_version,
+        "has_comparison": review.original_version is not None and review.modified_version is not None
     } for review in reviews])
 
 @app.route('/review/<int:review_id>', methods=['POST'])
@@ -1138,6 +1175,61 @@ def compare_versions(file_id, version1, version2):
             comparison["text_comparison_error"] = str(e)
 
     return jsonify(comparison)
+
+@app.route('/review-comparison/<int:review_id>', methods=['GET'])
+@login_required
+def get_review_comparison(review_id):
+    """Get comparison data for a review (original vs modified content)"""
+    review = DocumentReview.query.get_or_404(review_id)
+    if review.reviewer_id != current_user.id:
+        return {"error": "Access denied"}, 403
+    
+    file = review.file
+    if not file.filename.lower().endswith(('.txt', '.md', '.py', '.js', '.json', '.yaml', '.yml', '.html', '.css')):
+        return {"error": "File comparison not supported for this file type"}, 400
+    
+    try:
+        original_content = ""
+        modified_content = ""
+        
+        # Get original content (before changes)
+        if review.original_version:
+            original_version = FileVersion.query.filter_by(
+                file_id=file.id, 
+                version_number=review.original_version
+            ).first()
+            if original_version and os.path.exists(original_version.path):
+                with open(original_version.path, 'r', encoding='utf-8') as f:
+                    original_content = f.read()
+        
+        # Get modified content (current version)
+        if review.modified_version:
+            modified_version = FileVersion.query.filter_by(
+                file_id=file.id, 
+                version_number=review.modified_version
+            ).first()
+            if modified_version and os.path.exists(modified_version.path):
+                with open(modified_version.path, 'r', encoding='utf-8') as f:
+                    modified_content = f.read()
+            else:
+                # Fallback to current file content
+                if os.path.exists(file.path):
+                    with open(file.path, 'r', encoding='utf-8') as f:
+                        modified_content = f.read()
+        
+        return jsonify({
+            "review_id": review_id,
+            "file_id": file.id,
+            "filename": file.filename,
+            "original_content": original_content,
+            "modified_content": modified_content,
+            "original_version": review.original_version,
+            "modified_version": review.modified_version,
+            "requester": review.requester.username,
+            "requested_at": review.requested_at.isoformat()
+        })
+    except Exception as e:
+        return {"error": f"Error loading comparison: {str(e)}"}, 500
 
 # ────────────── Bootstrapping ────────────────────────────────────────────
 def create_default_test_user():
