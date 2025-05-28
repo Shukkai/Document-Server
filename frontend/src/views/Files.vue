@@ -25,6 +25,14 @@
         >
           <span class="icon">📁</span> Create Folder
         </button>
+        <!-- Admin Dashboard Button - Only show for admin users -->
+        <button 
+          v-if="isAdmin" 
+          :class="['nav-button', 'admin-button']" 
+          @click="goToAdminDashboard"
+        >
+          <span class="icon">👑</span> Admin Dashboard
+        </button>
         <button class="nav-button" @click="goToUserInfo">
           <span class="icon">👤</span> User Info
         </button>
@@ -138,10 +146,31 @@ const newFolderName  = ref('')
 const errorMessage   = ref('')
 const successMessage = ref('')
 const loading        = ref(false)
+const isAdmin        = ref(false)
 
 /* ----------------------------------------------------------- view control */
 function setActiveView(viewName) {
   activeView.value = viewName
+}
+
+// Check if current user is admin
+async function checkAdminStatus() {
+  try {
+    const response = await axios.get('/session-status', { withCredentials: true })
+    if (response.data && response.data.authenticated && response.data.user) {
+      isAdmin.value = !!response.data.user.is_admin
+      console.log('Admin status:', isAdmin.value, 'User:', response.data.user)
+    } else {
+      isAdmin.value = false
+    }
+  } catch (error) {
+    console.error('Error checking admin status:', error)
+    isAdmin.value = false
+  }
+}
+
+function goToAdminDashboard() {
+  router.push('/admin-dashboard')
 }
 
 /* -------------------------------------------------------------- helpers */
@@ -338,6 +367,7 @@ watch(errorMessage, (newVal) => {
 onMounted(() => {
   console.log('Files component mounted')
   loadFolders()
+  checkAdminStatus() // Check if user is admin
   // Set initial view, perhaps from query param or local storage in future
   setActiveView('home')
   startSessionMonitoring()
@@ -430,6 +460,21 @@ onUnmounted(() => {
   background-color: #fed7d7; /* Light red hover background */
   color: #c53030; /* Darker red on hover */
   border-bottom-color: transparent; /* Ensure no blue line from .nav-button.active if it was active */
+}
+
+.admin-button {
+  background-color: #ffc107 !important; /* Yellow background for admin */
+  color: #212529 !important; /* Dark text */
+  font-weight: 600 !important;
+  border: 2px solid #ffc107 !important;
+}
+
+.admin-button:hover {
+  background-color: #e0a800 !important; /* Darker yellow on hover */
+  color: #000 !important;
+  border-color: #e0a800 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(255, 193, 7, 0.3);
 }
 
 .main-content-area {
