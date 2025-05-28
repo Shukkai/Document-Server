@@ -17,6 +17,10 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
+    # Session Configuration for better isolation
     SESSION_COOKIE_NAME = "session"
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = False
+    SESSION_COOKIE_HTTPONLY = True
+    PERMANENT_SESSION_LIFETIME = 3600  # 1 hour
+    SESSION_TYPE = 'filesystem'  # Store sessions on filesystem instead of cookies

@@ -67,23 +67,24 @@
                   class="file-card"
                 >
                   <!-- File Header -->
-                  <div class="file-header">
+                  <div class="file-header" @click="toggleFileInfo(file)">
                     <div class="file-info">
                       <span class="file-icon">{{ getFileIcon(file.mimetype) }}</span>
                       <div class="file-details">
                         <h4 class="file-name" :title="file.name">{{ file.name }}</h4>
-                        <p class="file-meta">
-                          {{ formatFileType(file.mimetype) }}
-                          <span v-if="file.uploaded_at">
-                            • {{ formatDate(file.uploaded_at) }}
+                        <div class="file-status">
+                          <span v-if="file.is_under_review" class="review-status">
+                            📋 Under Review by {{ file.active_review.reviewer }}
                           </span>
-                        </p>
+                          <span class="file-date">{{ formatDate(file.uploaded_at) }}</span>
+                        </div>
                       </div>
                     </div>
+                    <span class="toggle-icon">{{ file.__showInfo ? '▲' : '▼' }}</span>
                   </div>
 
                   <!-- File Preview -->
-                  <div v-if="isPreviewable(file.mimetype)" class="file-preview">
+                  <div v-if="file.__showInfo && isPreviewable(file.mimetype)" class="file-preview">
                     <img
                       v-if="file.mimetype?.startsWith('image/')"
                       :src="`${baseURL}/download/${file.id}`"
@@ -103,7 +104,7 @@
                   </div>
 
                   <!-- File Actions -->
-                  <div class="file-actions">
+                  <div v-if="file.__showInfo" class="file-actions">
                     <!-- Move file -->
                     <div class="move-section">
                       <select
@@ -149,8 +150,8 @@
                         v-if="isTextEditable(file)"
                         class="btn btn-warning btn-sm"
                         @click="openTextEditor(file)"
-                        :disabled="isLoading"
-                        title="Edit file content"
+                        :disabled="isLoading || file.is_under_review"
+                        :title="file.is_under_review ? 'Cannot edit while under review' : 'Edit file content'"
                       >
                         <span class="icon">✏️</span>
                         Edit
@@ -159,11 +160,34 @@
                       <button
                         class="btn btn-secondary btn-sm" 
                         @click="openRenameModal(file)"
-                        :disabled="isLoading"
-                        title="Rename file"
+                        :disabled="isLoading || file.is_under_review"
+                        :title="file.is_under_review ? 'Cannot rename while under review' : 'Rename file'"
                       >
                         <span class="icon">🏷️</span>
                         Rename
+                      </button>
+
+                      <!-- Review actions -->
+                      <button
+                        v-if="!file.is_under_review"
+                        class="btn btn-review btn-sm"
+                        @click="openReviewModal(file)"
+                        :disabled="isLoading"
+                        title="Request review"
+                      >
+                        <span class="icon">📝</span>
+                        Request Review
+                      </button>
+
+                      <button
+                        v-else
+                        class="btn btn-cancel btn-sm"
+                        @click="cancelReview(file)"
+                        :disabled="isLoading"
+                        title="Cancel review request"
+                      >
+                        <span class="icon">❌</span>
+                        Cancel Review
                       </button>
 
                       <button
@@ -179,8 +203,8 @@
                       <button
                         class="btn btn-danger btn-sm"
                         @click="handleDeleteFile(file.id)"
-                        :disabled="isLoading"
-                        title="Delete file"
+                        :disabled="isLoading || file.is_under_review"
+                        :title="file.is_under_review ? 'Cannot delete while under review' : 'Delete file'"
                       >
                         <span class="icon">🗑️</span>
                         Delete
@@ -256,6 +280,60 @@
       @close="closeRenameModal"
       @rename-success="handleRenameSuccess"
     />
+
+    <!-- Request Review Modal -->
+    <div v-if="fileToReview" class="modal-overlay" @click="closeReviewModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>
+            <span class="icon">📝</span>
+            Request Review - {{ fileToReview.name }}
+          </h3>
+          <button class="modal-close" @click="closeReviewModal">×</button>
+        </div>
+        
+        <div class="modal-body">
+          <div class="file-info">
+            <p><strong>File:</strong> {{ fileToReview.name }}</p>
+            <p><strong>Type:</strong> {{ fileToReview.mimetype }}</p>
+          </div>
+          
+          <div class="reviewer-selection">
+            <label for="reviewer-select">Select Reviewer:</label>
+            <select 
+              id="reviewer-select" 
+              v-model="selectedReviewer" 
+              class="reviewer-select"
+              :disabled="isLoading"
+            >
+              <option value="">Choose a reviewer...</option>
+              <option 
+                v-for="user in users" 
+                :key="user.id" 
+                :value="user.id"
+              >
+                {{ user.username }} ({{ user.email }})
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="closeReviewModal" :disabled="isLoading">
+            Cancel
+          </button>
+          <button 
+            class="btn btn-primary" 
+            @click="requestReview" 
+            :disabled="!selectedReviewer || isLoading"
+          >
+            <span v-if="isLoading" class="icon">⏳</span>
+            <span v-else class="icon">📝</span>
+            Send Review Request
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -291,6 +369,9 @@ const selectedFile = ref(null)
 const editingFile = ref(null)
 const expandedFolders = ref(new Set())
 const fileToRename = ref(null)
+const fileToReview = ref(null)
+const users = ref([])
+const selectedReviewer = ref(null)
 
 /* ---------- helpers ---------- */
 const baseURL = axios.defaults.baseURL
@@ -451,6 +532,87 @@ function handleRenameSuccess(eventPayload) {
   setTimeout(() => {
     successMessage.value = null;
   }, 3000);
+}
+
+/* ---------- review functions ---------- */
+async function fetchUsers() {
+  try {
+    const response = await axios.get('/users', { withCredentials: true })
+    users.value = response.data
+  } catch (error) {
+    console.error('Error fetching users:', error)
+    error.value = 'Failed to load users'
+  }
+}
+
+function openReviewModal(file) {
+  fileToReview.value = file
+  fetchUsers()
+}
+
+function closeReviewModal() {
+  fileToReview.value = null
+  selectedReviewer.value = null
+}
+
+async function requestReview() {
+  if (!selectedReviewer.value) {
+    error.value = 'Please select a reviewer'
+    return
+  }
+
+  isLoading.value = true
+  error.value = null
+
+  try {
+    await axios.post(`/request-review/${fileToReview.value.id}`, {
+      reviewer_id: selectedReviewer.value
+    }, { withCredentials: true })
+    
+    successMessage.value = 'Review request sent successfully!'
+    closeReviewModal()
+    emit('refresh-tree')
+    
+    setTimeout(() => {
+      successMessage.value = null
+    }, 3000)
+  } catch (e) {
+    error.value = e.response?.data?.error || 'Failed to request review'
+    setTimeout(() => {
+      error.value = null
+    }, 5000)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function cancelReview(file) {
+  if (!confirm('Are you sure you want to cancel this review request?')) return
+
+  isLoading.value = true
+  error.value = null
+
+  try {
+    await axios.post(`/cancel-review/${file.id}`, {}, { withCredentials: true })
+    
+    successMessage.value = 'Review request cancelled successfully!'
+    emit('refresh-tree')
+    
+    setTimeout(() => {
+      successMessage.value = null
+    }, 3000)
+  } catch (e) {
+    error.value = e.response?.data?.error || 'Failed to cancel review'
+    setTimeout(() => {
+      error.value = null
+    }, 5000)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+function toggleFileInfo(file) {
+  file.__showInfo = !file.__showInfo
 }
 
 /* ---------- move file ---------- */
@@ -873,6 +1035,26 @@ function isTextEditable(file) {
   box-shadow: 0 2px 4px rgba(160, 174, 192, 0.3);
 }
 
+.btn-review {
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  color: white;
+}
+
+.btn-review:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(124, 58, 237, 0.3);
+}
+
+.btn-cancel {
+  background: linear-gradient(135deg, #e11d48 0%, #be185d 100%);
+  color: white;
+}
+
+.btn-cancel:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(225, 29, 72, 0.3);
+}
+
 /* ──────────── No Files ──────────── */
 .no-files {
   padding: 2rem;
@@ -1103,5 +1285,54 @@ function isTextEditable(file) {
   .modal-overlay {
     padding: 1rem;
   }
+}
+
+/* ──────────── Review Status ──────────── */
+.review-status {
+  background: #fef3c7;
+  color: #92400e;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: 1px solid #fcd34d;
+}
+
+.file-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.file-date {
+  font-size: 0.8rem;
+  color: #718096;
+}
+
+/* ──────────── Review Modal ──────────── */
+.reviewer-selection {
+  margin-top: 1rem;
+}
+
+.reviewer-selection label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #2d3748;
+}
+
+.reviewer-select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: white;
+}
+
+.reviewer-select:focus {
+  outline: none;
+  border-color: #4299e1;
+  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
 }
 </style>

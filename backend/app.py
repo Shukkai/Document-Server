@@ -16,6 +16,7 @@ from sqlalchemy.exc import OperationalError
 
 from models import (
     db, File, Folder, User, FileVersion,
+    DocumentReview, Notification,
     generate_reset_token, verify_reset_token,
 )
 from config import Config
@@ -158,9 +159,13 @@ def list_deleted_files():
     # Find all version records that don't have an associated file
     versions = db.session.query(FileVersion).outerjoin(File).filter(File.id == None).all()
     
+    # Filter versions to only include those belonging to current user
+    user_username = current_user.username
+    user_versions = [v for v in versions if f"/{user_username}/" in v.path or v.path.startswith(f"{user_username}/")]
+    
     # Group versions by file_id to get the latest version for each deleted file
     deleted_files = {}
-    for version in versions:
+    for version in user_versions:
         if version.file_id not in deleted_files or version.version_number > deleted_files[version.file_id]['version_number']:
             deleted_files[version.file_id] = {
                 'file_id': version.file_id,
@@ -215,10 +220,16 @@ def get_folders():
                 {
                     "id": f.id, "name": f.filename,
                     "mimetype": f.mimetype,
-                    "uploaded_at": f.uploaded_at.isoformat()
-                } for f in folder.files
+                    "uploaded_at": f.uploaded_at.isoformat(),
+                    "is_under_review": f.is_under_review,
+                    "active_review": {
+                        "id": f.get_active_review().id,
+                        "reviewer": f.get_active_review().reviewer.username,
+                        "requested_at": f.get_active_review().requested_at.isoformat()
+                    } if f.get_active_review() else None
+                } for f in folder.files if f.owner_id == current_user.id
             ],
-            "children": [ser(ch) for ch in folder.subfolders]
+            "children": [ser(ch) for ch in folder.subfolders if ch.owner_id == current_user.id]
         }
     
     def get_flat_folders(folder, depth=0):
@@ -389,6 +400,10 @@ def save_file_content(file_id):
     if file.owner_id != current_user.id: # Add admin check if necessary: and not current_user.is_admin
         return {"error": "Access denied to file"}, 403
 
+    # Check if file is under review
+    if file.is_under_review:
+        return {"error": "Cannot edit file while it is under review"}, 403
+
     if not file.filename.lower().endswith(('.txt', '.md', '.py', '.js', '.json', '.yaml', '.yml', '.html', '.css')):
         return {"error": "File is not a supported editable text file type"}, 400
 
@@ -494,14 +509,47 @@ def register():
 
     return {"message": "Registered successfully."}
 
+@app.route('/session-status', methods=['GET'])
+def session_status():
+    """Get current session status and user info"""
+    if current_user.is_authenticated:
+        return jsonify({
+            "authenticated": True,
+            "user": {
+                "id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email,
+                "is_admin": current_user.is_admin
+            }
+        })
+    else:
+        return jsonify({"authenticated": False, "user": None})
+
 @app.route('/login', methods=['POST'])
 def login():
-    # return {"message": "Login successful"}
     data = request.json or {}
-    user = User.query.filter_by(username=data.get('username')).first()
-    if user and user.check_password(data.get('password', '')):
-        login_user(user)
-        return {"message": "Login successful"}
+    username = data.get('username')
+    password = data.get('password')
+    
+    if not username or not password:
+        return {"error": "Username and password required"}, 400
+    
+    user = User.query.filter_by(username=username).first()
+    if user and user.check_password(password):
+        # Force logout any existing session first
+        if current_user.is_authenticated:
+            logout_user()
+        
+        login_user(user, remember=False, fresh=True)
+        return jsonify({
+            "message": "Login successful",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "is_admin": user.is_admin
+            }
+        })
     return {"error": "Invalid credentials"}, 401
 
 @app.route('/logout', methods=['POST'])
@@ -539,6 +587,220 @@ def change_password():
         return {"error":"Current password is wrong"}, 400
     current_user.set_password(new); db.session.commit()
     return {"message":"Password updated"}
+
+@app.route('/user-info', methods=['GET'])
+@login_required
+def get_user_info():
+    """Get current user's profile information"""
+    return jsonify({
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "grade": current_user.grade,
+        "is_admin": current_user.is_admin,
+        "created_at": current_user.created_at.isoformat() if current_user.created_at else None
+    })
+
+# ────────────── Review System ─────────────────────────────────────────────
+@app.route('/users', methods=['GET'])
+@login_required
+def get_users():
+    """Get list of all users for reviewer assignment"""
+    users = User.query.filter(User.id != current_user.id).all()
+    return jsonify([{
+        "id": user.id,
+        "username": user.username,
+        "email": user.email
+    } for user in users])
+
+@app.route('/request-review/<int:file_id>', methods=['POST'])
+@login_required
+def request_review(file_id):
+    """Request a review for a document"""
+    file = File.query.get_or_404(file_id)
+    if file.owner_id != current_user.id:
+        return {"error": "Access denied to file"}, 403
+    
+    if file.is_under_review:
+        return {"error": "File is already under review"}, 400
+    
+    data = request.json
+    reviewer_id = data.get('reviewer_id')
+    if not reviewer_id:
+        return {"error": "Reviewer ID is required"}, 400
+    
+    reviewer = User.query.get(reviewer_id)
+    if not reviewer:
+        return {"error": "Reviewer not found"}, 404
+    
+    if reviewer.id == current_user.id:
+        return {"error": "Cannot assign review to yourself"}, 400
+    
+    try:
+        # Create review record
+        review = DocumentReview(
+            file_id=file_id,
+            reviewer_id=reviewer_id,
+            requester_id=current_user.id,
+            status='pending'
+        )
+        db.session.add(review)
+        
+        # Mark file as under review
+        file.is_under_review = True
+        
+        # Create notification for reviewer
+        notification = Notification(
+            user_id=reviewer_id,
+            title="New Document Review Request",
+            message=f"{current_user.username} has requested you to review '{file.filename}'",
+            type="review_request",
+            related_file_id=file_id,
+            related_review_id=review.id
+        )
+        db.session.add(notification)
+        db.session.commit()
+        
+        return {"message": "Review request sent successfully"}, 201
+    except Exception as e:
+        db.session.rollback()
+        return {"error": f"Error creating review request: {str(e)}"}, 500
+
+@app.route('/my-reviews', methods=['GET'])
+@login_required
+def get_my_reviews():
+    """Get reviews assigned to current user"""
+    reviews = DocumentReview.query.filter_by(reviewer_id=current_user.id).order_by(DocumentReview.requested_at.desc()).all()
+    
+    return jsonify([{
+        "id": review.id,
+        "file_id": review.file_id,
+        "filename": review.file.filename,
+        "requester": review.requester.username,
+        "status": review.status,
+        "requested_at": review.requested_at.isoformat(),
+        "reviewed_at": review.reviewed_at.isoformat() if review.reviewed_at else None,
+        "comments": review.comments
+    } for review in reviews])
+
+@app.route('/review/<int:review_id>', methods=['POST'])
+@login_required
+def submit_review(review_id):
+    """Submit a review decision"""
+    review = DocumentReview.query.get_or_404(review_id)
+    if review.reviewer_id != current_user.id:
+        return {"error": "Access denied"}, 403
+    
+    if review.status != 'pending':
+        return {"error": "Review has already been completed"}, 400
+    
+    data = request.json
+    decision = data.get('decision')  # 'approved' or 'rejected'
+    comments = data.get('comments', '')
+    
+    if decision not in ['approved', 'rejected']:
+        return {"error": "Decision must be 'approved' or 'rejected'"}, 400
+    
+    try:
+        # Update review
+        review.status = decision
+        review.comments = comments
+        review.reviewed_at = datetime.utcnow()
+        
+        # Update file status
+        review.file.is_under_review = False
+        
+        # Create notification for requester
+        notification = Notification(
+            user_id=review.requester_id,
+            title=f"Review {decision.title()}",
+            message=f"Your document '{review.file.filename}' has been {decision} by {current_user.username}",
+            type="review_completed",
+            related_file_id=review.file_id,
+            related_review_id=review_id
+        )
+        db.session.add(notification)
+        db.session.commit()
+        
+        return {"message": f"Review {decision} successfully"}, 200
+    except Exception as e:
+        db.session.rollback()
+        return {"error": f"Error submitting review: {str(e)}"}, 500
+
+@app.route('/cancel-review/<int:file_id>', methods=['POST'])
+@login_required
+def cancel_review(file_id):
+    """Cancel a pending review request"""
+    file = File.query.get_or_404(file_id)
+    if file.owner_id != current_user.id:
+        return {"error": "Access denied to file"}, 403
+    
+    review = DocumentReview.query.filter_by(file_id=file_id, status='pending').first()
+    if not review:
+        return {"error": "No pending review found for this file"}, 404
+    
+    try:
+        # Update review status
+        review.status = 'cancelled'
+        
+        # Update file status
+        file.is_under_review = False
+        
+        # Create notification for reviewer
+        notification = Notification(
+            user_id=review.reviewer_id,
+            title="Review Request Cancelled",
+            message=f"The review request for '{file.filename}' has been cancelled by {current_user.username}",
+            type="info",
+            related_file_id=file_id,
+            related_review_id=review.id
+        )
+        db.session.add(notification)
+        db.session.commit()
+        
+        return {"message": "Review request cancelled successfully"}, 200
+    except Exception as e:
+        db.session.rollback()
+        return {"error": f"Error cancelling review: {str(e)}"}, 500
+
+@app.route('/notifications', methods=['GET'])
+@login_required
+def get_notifications():
+    """Get user's notifications"""
+    notifications = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc()).all()
+    
+    return jsonify([{
+        "id": notif.id,
+        "title": notif.title,
+        "message": notif.message,
+        "type": notif.type,
+        "is_read": notif.is_read,
+        "created_at": notif.created_at.isoformat(),
+        "related_file_id": notif.related_file_id,
+        "related_review_id": notif.related_review_id
+    } for notif in notifications])
+
+@app.route('/notifications/<int:notif_id>/read', methods=['POST'])
+@login_required
+def mark_notification_read(notif_id):
+    """Mark a notification as read"""
+    notification = Notification.query.get_or_404(notif_id)
+    if notification.user_id != current_user.id:
+        return {"error": "Access denied"}, 403
+    
+    notification.is_read = True
+    db.session.commit()
+    
+    return {"message": "Notification marked as read"}, 200
+
+@app.route('/notifications/mark-all-read', methods=['POST'])
+@login_required
+def mark_all_notifications_read():
+    """Mark all notifications as read"""
+    Notification.query.filter_by(user_id=current_user.id, is_read=False).update({"is_read": True})
+    db.session.commit()
+    
+    return {"message": "All notifications marked as read"}, 200
 
 # ────────────── Error: file too large ────────────────────────────────────
 @app.errorhandler(RequestEntityTooLarge)

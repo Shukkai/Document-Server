@@ -18,7 +18,7 @@
     </form>
 
     <p class="switch">
-      Don’t have an account? <router-link to="/register">Register here</router-link>
+      Don't have an account? <router-link to="/register">Register here</router-link>
     </p>
     <p class="reset-link">
       Forgot password? <a href="#" @click.prevent="promptReset">Reset</a>
@@ -40,14 +40,18 @@ const router = useRouter()
 async function handleLogin () {
   errorMessage.value = ''
   try {
-    await axios.post('/login', {
+    const response = await axios.post('/login', {
       username: username.value,
       password: password.value
-    })
-    setSession(true)
+    }, { withCredentials: true })
+    
+    // Set session with user information
+    setSession(true, response.data.user)
+    console.log('Logged in as:', response.data.user.username)
     router.push('/files')
-  } catch {
-    errorMessage.value = 'Login failed.'
+  } catch (error) {
+    console.error('Login failed:', error)
+    errorMessage.value = error.response?.data?.error || 'Login failed.'
   }
 }
 

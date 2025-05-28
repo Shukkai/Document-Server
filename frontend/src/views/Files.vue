@@ -25,6 +25,9 @@
         >
           <span class="icon">📁</span> Create Folder
         </button>
+        <button class="nav-button" @click="goToUserInfo">
+          <span class="icon">👤</span> User Info
+        </button>
          <button class="nav-button logout-button" @click="logout">
           <span class="icon">🚪</span> Logout
         </button>
@@ -116,10 +119,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
-import { sessionCache, setSession } from '@/router'
+import { sessionCache, setSession, startSessionMonitoring, stopSessionMonitoring } from '@/router'
 import FolderTree from '@/components/FolderTree.vue'
 
 const router = useRouter()
@@ -296,11 +299,22 @@ async function logout() {
   loading.value = true
   try {
     await axios.post('/logout', {}, { withCredentials: true })
-    setSession(false)
+    stopSessionMonitoring() // Stop session monitoring
+    setSession(false, null) // Clear session and user data
     router.push('/')
   } catch (err) {
     console.error('Logout error:', err)
-  } finally { loading.value = false }
+    // Even if logout fails on server, clear local session
+    stopSessionMonitoring()
+    setSession(false, null)
+    router.push('/')
+  } finally { 
+    loading.value = false 
+  }
+}
+
+function goToUserInfo() {
+  router.push('/user-info')
 }
 
 // Clear messages after 5 seconds
@@ -326,6 +340,12 @@ onMounted(() => {
   loadFolders()
   // Set initial view, perhaps from query param or local storage in future
   setActiveView('home')
+  startSessionMonitoring()
+})
+
+onUnmounted(() => {
+  console.log('Files component unmounted')
+  stopSessionMonitoring()
 })
 </script>
 
