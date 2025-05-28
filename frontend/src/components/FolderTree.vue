@@ -169,18 +169,7 @@
 
                       <!-- Review actions -->
                       <button
-                        v-if="!file.is_under_review"
-                        class="btn btn-review btn-sm"
-                        @click="openReviewModal(file)"
-                        :disabled="isLoading"
-                        title="Request review"
-                      >
-                        <span class="icon">📝</span>
-                        Request Review
-                      </button>
-
-                      <button
-                        v-else
+                        v-if="file.is_under_review"
                         class="btn btn-cancel btn-sm"
                         @click="cancelReview(file)"
                         :disabled="isLoading"
@@ -270,6 +259,7 @@
       :initialFilename="editingFile.name"
       @close="closeTextEditor"
       @save-success="handleSaveSuccess"
+      @save-and-review="handleSaveAndReview"
     />
 
     <!-- Rename File Modal -->
@@ -514,6 +504,40 @@ function handleSaveSuccess() {
    setTimeout(() => {
     successMessage.value = null;
   }, 3000);
+}
+
+async function handleSaveAndReview(fileId) {
+  successMessage.value = 'File saved! Opening review request...';
+  closeTextEditor();
+  emit('refresh-tree');
+  
+  // Find the file that was just saved
+  const findFileInFolders = (folders, targetId) => {
+    for (const folder of folders) {
+      if (folder.files) {
+        const file = folder.files.find(f => f.id === targetId);
+        if (file) return file;
+      }
+      if (folder.children) {
+        const file = findFileInFolders(folder.children, targetId);
+        if (file) return file;
+      }
+    }
+    return null;
+  };
+  
+  // Wait a moment for the tree to refresh, then open review modal
+  setTimeout(() => {
+    const file = findFileInFolders(props.folders, fileId);
+    if (file) {
+      openReviewModal(file);
+    } else {
+      // Fallback: create a minimal file object for the review modal
+      fileToReview.value = { id: fileId, name: 'File', mimetype: 'unknown' };
+      fetchUsers();
+    }
+    successMessage.value = null;
+  }, 1000);
 }
 
 /* ---------- rename file functions ---------- */

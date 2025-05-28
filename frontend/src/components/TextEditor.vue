@@ -31,12 +31,21 @@
         <button class="btn btn-secondary" @click="closeEditor" :disabled="isSaving">Cancel</button>
         <button 
           class="btn btn-primary" 
-          @click="saveContent" 
+          @click="saveDraft" 
           :disabled="isSaving || loading || !!error || isContentUnchanged"
         >
-          <span v-if="isSaving" class="icon">⏳</span>
+          <span v-if="isSaving && saveAction === 'draft'" class="icon">⏳</span>
           <span v-else class="icon">💾</span>
-          Save
+          Save Draft
+        </button>
+        <button 
+          class="btn btn-success" 
+          @click="saveAndRequestReview" 
+          :disabled="isSaving || loading || !!error || isContentUnchanged"
+        >
+          <span v-if="isSaving && saveAction === 'review'" class="icon">⏳</span>
+          <span v-else class="icon">📋</span>
+          Save & Request Review
         </button>
       </div>
     </div>
@@ -54,7 +63,7 @@ const props = defineProps({
   initialFilename: { type: String, default: 'file.txt' }
 });
 
-const emit = defineEmits(['close', 'save-success']);
+const emit = defineEmits(['close', 'save-success', 'save-and-review']);
 
 const content = ref('');
 const originalContent = ref(''); // To track changes
@@ -64,6 +73,7 @@ const error = ref(null);
 const isSaving = ref(false);
 const saveStatus = ref('');
 const isSuccess = ref(false);
+const saveAction = ref('draft');
 
 // Basic toolbar options for Quill. You can customize this extensively.
 // https://quilljs.com/docs/modules/toolbar/
@@ -126,10 +136,18 @@ async function saveContent() {
     // Send HTML content to the backend
     await axios.post(`/file-content/${props.fileId}`, { content: content.value }, { withCredentials: true });
     originalContent.value = content.value; // Update original content after successful save
-    saveStatus.value = 'File saved successfully!';
-    isSuccess.value = true;
-    emit('save-success');
-    setTimeout(() => closeEditor(), 1500); 
+    
+    if (saveAction.value === 'review') {
+      saveStatus.value = 'File saved! Requesting review...';
+      isSuccess.value = true;
+      emit('save-and-review', props.fileId);
+      setTimeout(() => closeEditor(), 1500);
+    } else {
+      saveStatus.value = 'File saved successfully!';
+      isSuccess.value = true;
+      emit('save-success');
+      setTimeout(() => closeEditor(), 1500);
+    }
   } catch (err) {
     console.error('Error saving file content:', err);
     saveStatus.value = err.response?.data?.error || 'Failed to save file.';
@@ -143,6 +161,16 @@ async function saveContent() {
 
 function closeEditor() {
   emit('close');
+}
+
+function saveDraft() {
+  saveAction.value = 'draft';
+  saveContent();
+}
+
+function saveAndRequestReview() {
+  saveAction.value = 'review';
+  saveContent();
 }
 
 onMounted(() => {
@@ -337,6 +365,14 @@ onMounted(() => {
 }
 .btn-secondary:hover:not(:disabled) {
   background-color: #cbd5e0;
+}
+
+.btn-success {
+  background-color: #28a745;
+  color: white;
+}
+.btn-success:hover:not(:disabled) {
+  background-color: #218838;
 }
 
 @keyframes spin {
