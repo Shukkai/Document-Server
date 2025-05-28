@@ -67,8 +67,7 @@ docker-compose up --build
 
 2. Access the application:
 
-•	Frontend: http://localhost:8080
-•	Backend: http://localhost:5001
-•	phpMyAdmin (Database Admin): http://localhost:8081 (Use `mysql` as host, `root` as user, and `root` as password)
-
+•	Frontend: http://localhost:8080  
+•	Backend: http://localhost:5001  
+•	phpMyAdmin (Database Admin): http://localhost:8081 (Use `mysql` as host, `root` as user, and `root` as password)  
 •	add a admin/non-admin users for testing
