@@ -42,6 +42,11 @@
             <span>{{ formatSize(version.size) }}</span>
             <span>{{ version.comment || '-' }}</span>
             <span class="actions">
+              <button v-if="isPreviewable()" 
+                      @click="previewVersion(version)" 
+                      class="action-btn preview">
+                Preview
+              </button>
               <button @click="downloadVersion(version)" class="action-btn">
                 Download
               </button>
@@ -106,6 +111,56 @@
     <button @click="toggleView" class="toggle-view-btn">
       {{ showDeletedFiles ? 'Show Version Control' : 'Show Deleted Files' }}
     </button>
+
+    <!-- Preview Modal -->
+    <div v-if="showPreviewModal" class="modal-overlay" @click="closePreviewModal">
+      <div class="preview-modal-content" @click.stop>
+        <div class="preview-header">
+          <h3 v-if="previewContent">
+            <span class="icon">👁️</span>
+            {{ previewContent.filename }} - v{{ previewContent.version_number }}
+          </h3>
+          <h3 v-else>Version Preview</h3>
+          <button class="modal-close" @click="closePreviewModal">×</button>
+        </div>
+        
+        <div class="preview-body">
+          <div v-if="loadingPreview" class="loading-preview">
+            <div class="loading-spinner"></div>
+            <p>Loading preview...</p>
+          </div>
+          
+          <div v-else-if="previewError" class="error-message">
+            <span class="icon">⚠️</span>
+            {{ previewError }}
+          </div>
+          
+          <div v-else-if="previewContent" class="preview-content">
+            <div class="preview-info">
+              <p><strong>Version:</strong> v{{ previewContent.version_number }}</p>
+              <p><strong>Comment:</strong> {{ previewContent.comment || 'No comment' }}</p>
+              <p><strong>Uploaded:</strong> {{ formatDate(previewContent.uploaded_at) }}</p>
+            </div>
+            
+            <div class="content-display">
+              <div class="html-content" v-html="previewContent.content"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="preview-footer">
+          <button class="btn btn-secondary" @click="closePreviewModal">
+            Close
+          </button>
+          <button v-if="previewContent" 
+                  class="btn btn-primary" 
+                  @click="downloadPreviewedVersion()">
+            <span class="icon">📥</span>
+            Download This Version
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -128,7 +183,11 @@ export default {
       versionComment: '',
       showDeletedFiles: false,
       selectedVersions: [],
-      comparisonResult: null
+      comparisonResult: null,
+      showPreviewModal: false,
+      previewContent: null,
+      loadingPreview: false,
+      previewError: null
     };
   },
   methods: {
@@ -269,6 +328,52 @@ export default {
       const sizes = ['B', 'KB', 'MB', 'GB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    },
+    isPreviewable() {
+      // Check if the file type is supported for preview
+      return true; // We'll handle this in the backend, so always show the button
+    },
+    async previewVersion(version) {
+      this.showPreviewModal = true;
+      this.loadingPreview = true;
+      this.previewError = null;
+      this.previewContent = null;
+
+      try {
+        const response = await axios.get(`/version-content/${this.fileId}/${version.version_number}`);
+        this.previewContent = response.data;
+      } catch (error) {
+        console.error('Error loading version preview:', error);
+        this.previewError = error.response?.data?.error || 'Failed to load version preview';
+      } finally {
+        this.loadingPreview = false;
+      }
+    },
+    closePreviewModal() {
+      this.showPreviewModal = false;
+      this.previewContent = null;
+      this.previewError = null;
+      this.loadingPreview = false;
+    },
+    async downloadPreviewedVersion() {
+      if (!this.previewContent) return;
+
+      try {
+        const response = await axios.get(
+          `/download-version/${this.fileId}/${this.previewContent.version_number}`,
+          { responseType: 'blob' }
+        );
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `v${this.previewContent.version_number}_${this.versions[0].filename}`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } catch (error) {
+        console.error('Error downloading version:', error);
+        this.$emit('error', 'Failed to download version');
+      }
     }
   },
   mounted() {
@@ -279,15 +384,15 @@ export default {
 
 <style scoped>
 .file-version-container {
-  padding: 20px;
-  max-width: 1200px;
+  padding: 30px;
+  max-width: 2000px;
   margin: 0 auto;
 }
 
 .version-control, .deleted-files {
   background: #fff;
   border-radius: 8px;
-  padding: 20px;
+  padding: 30px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   margin-bottom: 20px;
 }
@@ -319,7 +424,7 @@ export default {
 
 .version-header, .deleted-file-header {
   display: grid;
-  grid-template-columns: 80px 150px 100px 1fr 200px;
+  grid-template-columns: 80px 200px 120px 1fr 300px;
   padding: 10px;
   background: #f8f9fa;
   font-weight: bold;
@@ -328,7 +433,7 @@ export default {
 
 .version-row, .deleted-file-row {
   display: grid;
-  grid-template-columns: 80px 150px 100px 1fr 200px;
+  grid-template-columns: 80px 200px 120px 1fr 300px;
   padding: 10px;
   border-bottom: 1px solid #dee2e6;
   align-items: center;
@@ -340,7 +445,7 @@ export default {
 
 .actions {
   display: flex;
-  gap: 8px;
+  gap: 12px;
 }
 
 .action-btn {
@@ -414,5 +519,211 @@ h2 {
 h3 {
   color: #34495e;
   margin-bottom: 15px;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.preview-modal-content {
+  background: #fff;
+  border-radius: 12px;
+  width: calc(100vw - 40px);
+  max-width: none;
+  height: calc(100vh - 40px);
+  max-height: calc(100vh - 40px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.preview-body {
+  flex: 1;
+  padding: 1.5rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-info {
+  background: #f7fafc;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  flex-shrink: 0;
+}
+
+.content-display {
+  flex: 1;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-y: auto;
+  min-height: 400px;
+}
+
+.html-content {
+  white-space: pre-wrap;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.6;
+  color: #2d3748;
+}
+
+.preview-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #e2e8f0;
+  background: #f7fafc;
+  flex-shrink: 0;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #5a6268;
+}
+
+.btn-primary {
+  background: #007bff;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.icon {
+  margin-right: 5px;
+}
+
+.loading-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.loading-spinner {
+  border: 4px solid rgba(0, 0, 0, 0.1);
+  border-top: 4px solid #007bff;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.error-message {
+  color: #dc3545;
+  margin-bottom: 20px;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5em;
+  cursor: pointer;
+}
+
+.action-btn.preview {
+  background: #17a2b8;
+  color: white;
+}
+
+.action-btn.preview:hover {
+  background: #138496;
+}
+
+@media (max-width: 768px) {
+  .file-version-container {
+    padding: 10px;
+    max-width: 100%;
+  }
+  
+  .version-header, .deleted-file-header {
+    grid-template-columns: 60px 120px 80px 1fr 200px;
+    font-size: 0.8rem;
+  }
+  
+  .version-row, .deleted-file-row {
+    grid-template-columns: 60px 120px 80px 1fr 200px;
+    font-size: 0.85rem;
+  }
+  
+  .actions {
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .action-btn {
+    padding: 4px 8px;
+    font-size: 0.8rem;
+  }
+  
+  .preview-modal-content {
+    width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+    border-radius: 8px;
+  }
+  
+  .preview-header, .preview-body, .preview-footer {
+    padding: 1rem;
+  }
+  
+  .content-display {
+    min-height: 300px;
+  }
+  
+  .btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+  }
 }
 </style>

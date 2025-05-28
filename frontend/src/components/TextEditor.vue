@@ -28,24 +28,29 @@
         <div v-if="saveStatus" :class="['save-status', {'success': isSuccess, 'error': !isSuccess}]">
           {{ saveStatus }}
         </div>
-        <button class="btn btn-secondary" @click="closeEditor" :disabled="isSaving">Cancel</button>
+        <button class="btn btn-secondary" @click="closeEditor" :disabled="isSaving">
+          <span class="icon">❌</span>
+          Cancel
+        </button>
         <button 
           class="btn btn-primary" 
           @click="saveDraft" 
           :disabled="isSaving || loading || !!error || isContentUnchanged"
+          :title="saveButtonTitle"
         >
           <span v-if="isSaving && saveAction === 'draft'" class="icon">⏳</span>
           <span v-else class="icon">💾</span>
-          Save Draft
+          {{ saveButtonText }}
         </button>
         <button 
           class="btn btn-success" 
           @click="saveAndRequestReview" 
-          :disabled="isSaving || loading || !!error || isContentUnchanged"
+          :disabled="isSaving || loading || !!error"
+          title="Request a review for this file (will save changes if any)"
         >
           <span v-if="isSaving && saveAction === 'review'" class="icon">⏳</span>
-          <span v-else class="icon">📋</span>
-          Save & Request Review
+          <span v-else class="icon">📝</span>
+          {{ requestReviewButtonText }}
         </button>
       </div>
     </div>
@@ -104,6 +109,23 @@ const isContentUnchanged = computed(() => {
   return normalizedCurrentContent === normalizedOriginalContent;
 });
 
+const saveButtonText = computed(() => {
+  if (isSaving.value && saveAction.value === 'draft') return 'Saving...';
+  if (isContentUnchanged.value) return 'No Changes';
+  return 'Save';
+});
+
+const saveButtonTitle = computed(() => {
+  if (isContentUnchanged.value) return 'No changes to save';
+  return 'Save changes to file';
+});
+
+const requestReviewButtonText = computed(() => {
+  if (isSaving.value && saveAction.value === 'review') return 'Processing...';
+  if (isContentUnchanged.value) return 'Request Review';
+  return 'Save & Request Review';
+});
+
 async function fetchContent() {
   loading.value = true;
   error.value = null;
@@ -125,9 +147,9 @@ async function fetchContent() {
 async function saveContent() {
   if (isContentUnchanged.value) {
     saveStatus.value = 'No changes to save.';
-    isSuccess.value = true; // Or neutral, but let's indicate it's not an error
+    isSuccess.value = true;
     setTimeout(() => { saveStatus.value = '' }, 3000);
-    return;
+    return true; // Return success status
   }
   isSaving.value = true;
   saveStatus.value = '';
@@ -137,25 +159,17 @@ async function saveContent() {
     await axios.post(`/file-content/${props.fileId}`, { content: content.value }, { withCredentials: true });
     originalContent.value = content.value; // Update original content after successful save
     
-    if (saveAction.value === 'review') {
-      saveStatus.value = 'File saved! Requesting review...';
-      isSuccess.value = true;
-      emit('save-and-review', props.fileId);
-      setTimeout(() => closeEditor(), 1500);
-    } else {
-      saveStatus.value = 'File saved successfully!';
-      isSuccess.value = true;
-      emit('save-success');
-      setTimeout(() => closeEditor(), 1500);
-    }
+    saveStatus.value = 'File saved successfully! You can continue editing or request a review.';
+    isSuccess.value = true;
+    return true; // Return success status
   } catch (err) {
     console.error('Error saving file content:', err);
     saveStatus.value = err.response?.data?.error || 'Failed to save file.';
     isSuccess.value = false;
-    // error.value = saveStatus.value; // Keep error distinct from saveStatus
+    return false; // Return failure status
   } finally {
     isSaving.value = false;
-    setTimeout(() => { saveStatus.value = '' }, 4000); 
+    setTimeout(() => { saveStatus.value = '' }, 3000); 
   }
 }
 
@@ -163,14 +177,46 @@ function closeEditor() {
   emit('close');
 }
 
-function saveDraft() {
+async function saveDraft() {
   saveAction.value = 'draft';
-  saveContent();
+  const success = await saveContent();
+  if (success) {
+    emit('save-success');
+  }
 }
 
-function saveAndRequestReview() {
+async function saveAndRequestReview() {
   saveAction.value = 'review';
-  saveContent();
+  
+  // If there are no changes, skip saving and go directly to review request
+  if (isContentUnchanged.value) {
+    saveStatus.value = 'No changes to save. Opening review request...';
+    isSuccess.value = true;
+    emit('save-and-review', props.fileId);
+    setTimeout(() => closeEditor(), 1500);
+    return;
+  }
+  
+  // If there are changes, save first then request review
+  try {
+    saveStatus.value = 'Saving file...';
+    const success = await saveContent();
+    
+    if (success) {
+      saveStatus.value = 'File saved! Preparing review request...';
+      
+      // Wait a moment to ensure all server-side operations are complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Now emit the save-and-review event
+      emit('save-and-review', props.fileId);
+      setTimeout(() => closeEditor(), 1500);
+    }
+  } catch (error) {
+    console.error('Error in saveAndRequestReview:', error);
+    saveStatus.value = 'Failed to save file. Please try again.';
+    isSuccess.value = false;
+  }
 }
 
 onMounted(() => {
@@ -307,72 +353,108 @@ onMounted(() => {
 }
 
 .modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 1rem 1.5rem;
   border-top: 1px solid #e2e8f0;
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 0.75rem;
-  flex-shrink: 0;
+  background: #f8fafc;
+  gap: 1rem;
 }
 
-.save-status {
-  margin-right: auto; /* Pushes status to the left */
+.modal-footer .save-status {
+  flex: 1;
   font-size: 0.9rem;
+  font-weight: 500;
   padding: 0.5rem 0.75rem;
   border-radius: 4px;
 }
 
-.save-status.success {
+.modal-footer .save-status.success {
   color: #155724;
   background-color: #d4edda;
+  border: 1px solid #c3e6cb;
+  animation: fadeInSuccess 0.3s ease-in;
 }
 
-.save-status.error {
+.modal-footer .save-status.error {
   color: #721c24;
   background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
 }
 
-.btn {
+.modal-footer .btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.6rem 1rem;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
   border: none;
   border-radius: 6px;
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
-.btn:disabled {
-  opacity: 0.6;
+.modal-footer .btn:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-.btn-primary {
-  background-color: #4299e1;
-  color: white;
-}
-.btn-primary:hover:not(:disabled) {
-  background-color: #3182ce;
+.modal-footer .btn-secondary {
+  background: #e2e8f0;
+  color: #4a5568;
+  order: 1;
 }
 
-.btn-secondary {
-  background-color: #e2e8f0;
-  color: #2d3748;
-}
-.btn-secondary:hover:not(:disabled) {
-  background-color: #cbd5e0;
+.modal-footer .btn-secondary:hover:not(:disabled) {
+  background: #cbd5e0;
+  transform: translateY(-1px);
 }
 
-.btn-success {
-  background-color: #28a745;
+.modal-footer .btn-primary {
+  background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
   color: white;
+  order: 2;
+  box-shadow: 0 2px 4px rgba(66, 153, 225, 0.2);
 }
-.btn-success:hover:not(:disabled) {
-  background-color: #218838;
+
+.modal-footer .btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #3182ce 0%, #2c5aa0 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(66, 153, 225, 0.3);
+}
+
+.modal-footer .btn-primary:disabled {
+  background: #e2e8f0;
+  color: #a0aec0;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.modal-footer .btn-success {
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  color: white;
+  order: 3;
+  box-shadow: 0 2px 4px rgba(72, 187, 120, 0.2);
+}
+
+.modal-footer .btn-success:hover:not(:disabled) {
+  background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(72, 187, 120, 0.3);
+}
+
+@keyframes fadeInSuccess {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes spin {

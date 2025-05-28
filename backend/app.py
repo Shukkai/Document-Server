@@ -3,7 +3,7 @@ from __future__ import annotations
 import os, time
 from datetime import datetime
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, current_app
 from flask_cors import CORS
 from flask_login import (
     LoginManager, login_user, logout_user,
@@ -13,6 +13,7 @@ from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
 from sqlalchemy import inspect
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 
 from models import (
     db, File, Folder, User, FileVersion,
@@ -61,10 +62,47 @@ def folder_disk_path(folder: Folder | None, username: str) -> str:
     return os.path.join(app.config['UPLOAD_FOLDER'], username, *path_parts)
 
 def get_version_dir(username: str) -> str:
-    """Get the .version directory path for a user"""
-    version_dir = os.path.join(app.config['UPLOAD_FOLDER'], username, '.version')
-    os.makedirs(version_dir, exist_ok=True)
-    return version_dir
+    """Returns the .version directory for a user"""
+    return os.path.join(Config.UPLOAD_FOLDER, username, '.version')
+
+def get_next_version_number(file_id: int) -> int:
+    """Get the next available version number for a file"""
+    highest_version = db.session.query(db.func.max(FileVersion.version_number)).filter_by(file_id=file_id).scalar()
+    return (highest_version or 0) + 1
+
+# Helper function to get content of a specific version
+def _get_content_for_version(db_session: Session, file_obj: File, version_number_to_fetch: int | None) -> str:
+    """Fetches the content for a given file and version number.
+    Assumes FileVersion(N).path stores the actual content of version N.
+    """
+    if version_number_to_fetch is None:
+        current_app.logger.info(f"Requested version is None for file {file_obj.id}. Returning empty content.")
+        return ""
+
+    # Ensure file_obj is associated with the current session
+    if file_obj not in db_session:
+        file_obj = db_session.merge(file_obj)
+
+    fv_record = db_session.query(FileVersion).filter_by(file_id=file_obj.id, version_number=version_number_to_fetch).first()
+
+    if not fv_record:
+        current_app.logger.warning(f"FileVersion record not found for file {file_obj.id}, version {version_number_to_fetch}.")
+        return ""
+        
+    content_path = fv_record.path
+    
+    if content_path and os.path.exists(content_path):
+        try:
+            with open(content_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            current_app.logger.info(f"Successfully read content for file {file_obj.id} V{version_number_to_fetch} from {content_path}. Length: {len(content)}")
+            return content
+        except Exception as e:
+            current_app.logger.error(f"Error reading content for file {file_obj.id} V{version_number_to_fetch} from {content_path}: {e}", exc_info=True)
+            return ""
+    else:
+        current_app.logger.warning(f"Content path for file {file_obj.id} V{version_number_to_fetch} not found or does not exist. Path: {content_path}")
+        return ""
 
 # ───────────────────────────────── Routes ─────────────────────────────────
 @app.route('/')
@@ -101,6 +139,7 @@ def upload_file():
 
     # Create initial version record and store in .version directory
     version_dir = get_version_dir(current_user.username)
+    os.makedirs(version_dir, exist_ok=True)
     version_path = os.path.join(version_dir, f"{rec.id}_v1_{secure_filename(f.filename)}")
     import shutil
     shutil.copy2(final_path, version_path)
@@ -397,13 +436,10 @@ def get_file_content(file_id):
 @login_required
 def save_file_content(file_id):
     file = File.query.get_or_404(file_id)
-    if file.owner_id != current_user.id: # Add admin check if necessary: and not current_user.is_admin
+    if file.owner_id != current_user.id:
         return {"error": "Access denied to file"}, 403
-
-    # Check if file is under review
     if file.is_under_review:
         return {"error": "Cannot edit file while it is under review"}, 403
-
     if not file.filename.lower().endswith(('.txt', '.md', '.py', '.js', '.json', '.yaml', '.yml', '.html', '.css')):
         return {"error": "File is not a supported editable text file type"}, 400
 
@@ -413,53 +449,50 @@ def save_file_content(file_id):
         return {"error": "No content provided"}, 400
 
     try:
-        # Create a version of the current file before modifying it
         username = User.query.get(file.owner_id).username
         version_dir = get_version_dir(username)
         os.makedirs(version_dir, exist_ok=True)
         
-        # Get the next version number
-        next_version = (file.current_version or 0) + 1
+        next_version_number = get_next_version_number(file_id)
         
-        # Create version file path
         base_name = os.path.splitext(file.filename)[0]
         ext = os.path.splitext(file.filename)[1]
-        version_filename = f"{base_name}_v{next_version}{ext}"
-        version_path = os.path.join(version_dir, version_filename)
-        
-        # Copy current content to version file (if file exists)
-        if os.path.exists(file.path):
-            import shutil
-            shutil.copy2(file.path, version_path)
-        else:
-            # If original file doesn't exist, create empty version
-            with open(version_path, 'w', encoding='utf-8') as f:
-                f.write('')
-        
-        # Create version record
+        # Path for the new version's content file in the .version directory
+        new_version_content_path = os.path.join(version_dir, f"{base_name}_v{next_version_number}{ext}")
+
+        # 1. Save the new content to its dedicated version file
+        with open(new_version_content_path, 'w', encoding='utf-8') as f_version:
+            f_version.write(new_content)
+
+        # 2. Create the FileVersion record pointing to this new version file
         version_record = FileVersion(
             file_id=file_id,
-            version_number=next_version,
-            path=version_path,
-            comment="Auto-created before content edit"
+            version_number=next_version_number,
+            path=new_version_content_path,
+            comment=f"Version {next_version_number}"
         )
         db.session.add(version_record)
         
-        # Now save the new content to the main file
-        actual_path = file.path
-        os.makedirs(os.path.dirname(actual_path), exist_ok=True)
-
-        with open(actual_path, 'w', encoding='utf-8') as f:
-            f.write(new_content)
+        # 3. Update the main file (File.path) to reflect the new content
+        # This ensures File.path always has the content of File.current_version
+        # The actual live file path might be different from version files if desired, 
+        # but for simplicity here, we can copy from the version file.
+        live_file_path = file.path
+        os.makedirs(os.path.dirname(live_file_path), exist_ok=True)
+        import shutil
+        shutil.copy2(new_version_content_path, live_file_path)
         
-        # Update file record
-        file.current_version = next_version
+        # 4. Update file record metadata
+        file.current_version = next_version_number
         file.updated_at = datetime.utcnow()
+        
         db.session.commit()
         
-        return {"message": "File saved successfully", "version": next_version}
+        current_app.logger.info(f"File {file_id} saved. New version {next_version_number} created at {new_version_content_path}. Live file {live_file_path} updated.")
+        return {"message": "File saved successfully", "version": next_version_number}
     except Exception as e:
         db.session.rollback()
+        current_app.logger.error(f"Error saving file {file_id}: {str(e)}", exc_info=True)
         return {"error": f"Error saving file: {str(e)}"}, 500
 
 # ────────────── Rename File ──────────────────────────────────────────────
@@ -665,9 +698,23 @@ def request_review(file_id):
         return {"error": "Cannot assign review to yourself"}, 400
     
     try:
-        # Get the previous version (before current changes) and current version
+        # Refresh the file data to ensure we have the latest version information
+        db.session.refresh(file)
+        
+        # Get the current version (which contains the latest changes)
         current_version = file.current_version or 1
-        previous_version = current_version - 1 if current_version > 1 else None
+        
+        # For comparison purposes:
+        # - modified_version should be the current version (with latest changes)
+        # - original_version should be the previous version (before the changes)
+        # If this is version 1, there's no previous version to compare
+        if current_version > 1:
+            original_version = current_version - 1
+            modified_version = current_version
+        else:
+            # For the first version, we compare against nothing (no original)
+            original_version = None
+            modified_version = current_version
         
         # Create review record
         review = DocumentReview(
@@ -675,8 +722,8 @@ def request_review(file_id):
             reviewer_id=reviewer_id,
             requester_id=current_user.id,
             status='pending',
-            original_version=previous_version,
-            modified_version=current_version
+            original_version=original_version,
+            modified_version=modified_version
         )
         db.session.add(review)
         
@@ -695,7 +742,10 @@ def request_review(file_id):
         db.session.add(notification)
         db.session.commit()
         
-        return {"message": "Review request sent successfully"}, 201
+        # Log the review creation for debugging
+        current_app.logger.info(f"Review created for file {file_id}: original_version={original_version}, modified_version={modified_version}")
+        
+        return {"message": "Review request sent successfully", "original_version": original_version, "modified_version": modified_version}, 201
     except Exception as e:
         db.session.rollback()
         return {"error": f"Error creating review request: {str(e)}"}, 500
@@ -858,8 +908,10 @@ def upload_version(file_id):
         return {"error": "Access denied"}, 403
 
     # Create new version
-    new_version_number = file.current_version + 1
+    # Get the next version number by checking the highest existing version
+    new_version_number = get_next_version_number(file_id)
     version_dir = get_version_dir(current_user.username)
+    os.makedirs(version_dir, exist_ok=True)
     version_path = os.path.join(version_dir, f"{file_id}_v{new_version_number}_{secure_filename(f.filename)}")
     f.save(version_path)
 
@@ -910,8 +962,10 @@ def restore_version(file_id, version_number):
     version = FileVersion.query.filter_by(file_id=file_id, version_number=version_number).first_or_404()
     
     # Create new version from the restored version
-    new_version_number = file.current_version + 1
+    # Get the next version number by checking the highest existing version
+    new_version_number = get_next_version_number(file_id)
     version_dir = get_version_dir(current_user.username)
+    os.makedirs(version_dir, exist_ok=True)
     new_version_path = os.path.join(version_dir, f"{file_id}_v{new_version_number}_{secure_filename(file.filename)}")
     
     # Copy the restored version to new version
@@ -956,6 +1010,37 @@ def download_version(file_id, version_number):
         as_attachment=True,
         download_name=f"{os.path.splitext(file.filename)[0]}_v{version_number}{os.path.splitext(file.filename)[1]}"
     )
+
+@app.route('/version-content/<int:file_id>/<int:version_number>', methods=['GET'])
+@login_required
+def get_version_content(file_id, version_number):
+    """Get content of a specific version for preview purposes"""
+    file = File.query.get_or_404(file_id)
+    if file.owner_id != current_user.id and not current_user.is_admin:
+        return {"error": "Access denied"}, 403
+
+    version = FileVersion.query.filter_by(file_id=file_id, version_number=version_number).first_or_404()
+    
+    if not os.path.exists(version.path):
+        return {"error": "Version file not found"}, 404
+
+    # Check if it's a text file that can be previewed
+    if not file.filename.lower().endswith(('.txt', '.md', '.py', '.js', '.json', '.yaml', '.yml', '.html', '.css')):
+        return {"error": "File type not supported for content preview"}, 400
+
+    try:
+        with open(version.path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return jsonify({
+            "content": content,
+            "filename": file.filename,
+            "version_number": version_number,
+            "mimetype": file.mimetype,
+            "comment": version.comment,
+            "uploaded_at": version.uploaded_at.isoformat()
+        })
+    except Exception as e:
+        return {"error": f"Error reading version content: {str(e)}"}, 500
 
 @app.route('/delete-version/<int:file_id>/<int:version_number>', methods=['DELETE'])
 @login_required
@@ -1181,7 +1266,8 @@ def compare_versions(file_id, version1, version2):
 def get_review_comparison(review_id):
     """Get comparison data for a review (original vs modified content)"""
     review = DocumentReview.query.get_or_404(review_id)
-    if review.reviewer_id != current_user.id:
+    # Ensure the reviewer or the requester can access the comparison
+    if review.reviewer_id != current_user.id and review.requester_id != current_user.id:
         return {"error": "Access denied"}, 403
     
     file = review.file
@@ -1189,34 +1275,15 @@ def get_review_comparison(review_id):
         return {"error": "File comparison not supported for this file type"}, 400
     
     try:
-        original_content = ""
-        modified_content = ""
+        # Get content using the new helper function
+        original_content = _get_content_for_version(db.session, file, review.original_version)
+        modified_content = _get_content_for_version(db.session, file, review.modified_version)
         
-        # Get original content (before changes)
-        if review.original_version:
-            original_version = FileVersion.query.filter_by(
-                file_id=file.id, 
-                version_number=review.original_version
-            ).first()
-            if original_version and os.path.exists(original_version.path):
-                with open(original_version.path, 'r', encoding='utf-8') as f:
-                    original_content = f.read()
-        
-        # Get modified content (current version)
-        if review.modified_version:
-            modified_version = FileVersion.query.filter_by(
-                file_id=file.id, 
-                version_number=review.modified_version
-            ).first()
-            if modified_version and os.path.exists(modified_version.path):
-                with open(modified_version.path, 'r', encoding='utf-8') as f:
-                    modified_content = f.read()
-            else:
-                # Fallback to current file content
-                if os.path.exists(file.path):
-                    with open(file.path, 'r', encoding='utf-8') as f:
-                        modified_content = f.read()
-        
+        current_app.logger.info(f"Review Comparison for review {review.id}:")
+        current_app.logger.info(f"  File ID: {file.id}, Filename: {file.filename}")
+        current_app.logger.info(f"  Original Version: {review.original_version}, Length: {len(original_content)}")
+        current_app.logger.info(f"  Modified Version: {review.modified_version}, Length: {len(modified_content)}")
+
         return jsonify({
             "review_id": review_id,
             "file_id": file.id,
@@ -1229,6 +1296,7 @@ def get_review_comparison(review_id):
             "requested_at": review.requested_at.isoformat()
         })
     except Exception as e:
+        current_app.logger.error(f"Error loading comparison for review {review_id}: {str(e)}")
         return {"error": f"Error loading comparison: {str(e)}"}, 500
 
 # ────────────── Bootstrapping ────────────────────────────────────────────

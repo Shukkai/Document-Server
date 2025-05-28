@@ -273,53 +273,80 @@
 
     <!-- Request Review Modal -->
     <div v-if="fileToReview" class="modal-overlay" @click="closeReviewModal">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>
-            <span class="icon">📝</span>
-            Request Review - {{ fileToReview.name }}
-          </h3>
+      <div class="modal-content review-modal" @click.stop>
+        <div class="modal-header review-header">
+          <div class="header-content">
+            <div class="header-icon">
+              <span class="icon">📝</span>
+            </div>
+            <div class="header-text">
+              <h3>Request Review</h3>
+              <p class="header-subtitle">Send this document for review</p>
+            </div>
+          </div>
           <button class="modal-close" @click="closeReviewModal">×</button>
         </div>
         
-        <div class="modal-body">
-          <div class="file-info">
-            <p><strong>File:</strong> {{ fileToReview.name }}</p>
-            <p><strong>Type:</strong> {{ fileToReview.mimetype }}</p>
+        <div class="modal-body review-body">
+          <div class="file-info review-file-info">
+            <div class="file-header">
+              <div class="file-icon">
+                {{ getFileIcon(fileToReview.mimetype) }}
+              </div>
+              <div class="file-details">
+                <h4 class="file-name">{{ fileToReview.name }}</h4>
+                <p class="file-type">{{ formatFileType(fileToReview.mimetype) }}</p>
+              </div>
+            </div>
           </div>
           
-          <div class="reviewer-selection">
-            <label for="reviewer-select">Select Reviewer:</label>
-            <select 
-              id="reviewer-select" 
-              v-model="selectedReviewer" 
-              class="reviewer-select"
-              :disabled="isLoading"
-            >
-              <option value="">Choose a reviewer...</option>
-              <option 
-                v-for="user in users" 
-                :key="user.id" 
-                :value="user.id"
+          <div class="reviewer-selection review-selection">
+            <label for="reviewer-select" class="selection-label">
+              <span class="label-icon">👤</span>
+              Select Reviewer
+            </label>
+            <div class="select-wrapper">
+              <select 
+                id="reviewer-select" 
+                v-model="selectedReviewer" 
+                class="reviewer-select modern-select"
+                :disabled="isLoading"
               >
-                {{ user.username }} ({{ user.email }})
-              </option>
-            </select>
+                <option value="" disabled>Choose a reviewer...</option>
+                <option 
+                  v-for="user in users" 
+                  :key="user.id" 
+                  :value="user.id"
+                >
+                  {{ user.username }} ({{ user.email }})
+                </option>
+              </select>
+              <div class="select-arrow">
+                <span>▼</span>
+              </div>
+            </div>
+            <p class="selection-help">The selected reviewer will be notified about your request</p>
           </div>
         </div>
 
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="closeReviewModal" :disabled="isLoading">
+        <div class="modal-footer review-footer">
+          <button 
+            class="btn btn-secondary modern-btn" 
+            @click="closeReviewModal" 
+            :disabled="isLoading"
+          >
+            <span class="btn-icon">✕</span>
             Cancel
           </button>
           <button 
-            class="btn btn-primary" 
+            class="btn btn-primary modern-btn primary-gradient" 
             @click="requestReview" 
             :disabled="!selectedReviewer || isLoading"
           >
-            <span v-if="isLoading" class="icon">⏳</span>
-            <span v-else class="icon">📝</span>
-            Send Review Request
+            <span v-if="isLoading" class="btn-icon loading">⏳</span>
+            <span v-else class="btn-icon">📤</span>
+            <span v-if="isLoading">Sending...</span>
+            <span v-else>Send Review Request</span>
           </button>
         </div>
       </div>
@@ -507,37 +534,68 @@ function handleSaveSuccess() {
 }
 
 async function handleSaveAndReview(fileId) {
-  successMessage.value = 'File saved! Opening review request...';
-  closeTextEditor();
-  emit('refresh-tree');
-  
-  // Find the file that was just saved
-  const findFileInFolders = (folders, targetId) => {
-    for (const folder of folders) {
-      if (folder.files) {
-        const file = folder.files.find(f => f.id === targetId);
-        if (file) return file;
+  try {
+    successMessage.value = 'File saved! Opening review request...';
+    closeTextEditor();
+    
+    // Force refresh the tree and wait for it to complete
+    emit('refresh-tree');
+    
+    // Wait longer to ensure the tree has been refreshed with latest data
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Try to find the updated file in the refreshed tree
+    const findFileInFolders = (folders, targetId) => {
+      for (const folder of folders) {
+        if (folder.files) {
+          const file = folder.files.find(f => f.id === targetId);
+          if (file) return file;
+        }
+        if (folder.children) {
+          const file = findFileInFolders(folder.children, targetId);
+          if (file) return file;
+        }
       }
-      if (folder.children) {
-        const file = findFileInFolders(folder.children, targetId);
-        if (file) return file;
+      return null;
+    };
+    
+    let file = findFileInFolders(props.folders, fileId);
+    
+    // If still not found, fetch fresh file data directly from the server
+    if (!file) {
+      try {
+        const response = await axios.get(`/file-content/${fileId}`, { withCredentials: true });
+        // Create a minimal file object with the essential data we need
+        file = {
+          id: fileId,
+          name: response.data.filename || 'File',
+          filename: response.data.filename || 'File',
+          mimetype: response.data.mimetype || 'unknown'
+        };
+      } catch (error) {
+        console.error('Failed to fetch file data:', error);
+        // Fallback: create a minimal file object
+        file = { 
+          id: fileId, 
+          name: 'File', 
+          filename: 'File', 
+          mimetype: 'unknown' 
+        };
       }
     }
-    return null;
-  };
-  
-  // Wait a moment for the tree to refresh, then open review modal
-  setTimeout(() => {
-    const file = findFileInFolders(props.folders, fileId);
-    if (file) {
-      openReviewModal(file);
-    } else {
-      // Fallback: create a minimal file object for the review modal
-      fileToReview.value = { id: fileId, name: 'File', mimetype: 'unknown' };
-      fetchUsers();
-    }
+    
+    // Now open the review modal with the updated file data
+    openReviewModal(file);
     successMessage.value = null;
-  }, 1000);
+    
+  } catch (error) {
+    console.error('Error in handleSaveAndReview:', error);
+    error.value = 'Failed to open review request. Please try again.';
+    successMessage.value = null;
+    setTimeout(() => {
+      error.value = null;
+    }, 5000);
+  }
 }
 
 /* ---------- rename file functions ---------- */
@@ -1187,7 +1245,7 @@ function isTextEditable(file) {
   background: white;
   border-radius: 12px;
   width: 100%;
-  max-width: 800px;
+  max-width: 1400px;
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 20px 40px rgba(0,0,0,0.3);
@@ -1334,29 +1392,212 @@ function isTextEditable(file) {
 }
 
 /* ──────────── Review Modal ──────────── */
-.reviewer-selection {
+.review-modal {
+  max-width: 500px;
+  width: 100%;
+  max-width: 600px;
+}
+
+.review-header {
+  padding: 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.header-icon {
+  font-size: 1.5rem;
+}
+
+.header-text {
+  flex: 1;
+}
+
+.header-text h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.header-text p {
+  margin: 0.5rem 0;
+  font-size: 0.8rem;
+  color: #718096;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #718096;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+  background: #e2e8f0;
+  color: #2d3748;
+}
+
+.review-body {
+  padding: 1.5rem;
+}
+
+.review-file-info {
+  background: #f7fafc;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.file-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.file-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.file-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  margin: 0 0 0.25rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #2d3748;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-type {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #718096;
+}
+
+.review-selection {
   margin-top: 1rem;
 }
 
-.reviewer-selection label {
+.selection-label {
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
   color: #2d3748;
 }
 
-.reviewer-select {
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  background: white;
+.select-wrapper {
+  position: relative;
 }
 
-.reviewer-select:focus {
-  outline: none;
-  border-color: #4299e1;
-  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+.select-arrow {
+  position: absolute;
+  top: 50%;
+  right: 1rem;
+  transform: translateY(-50%);
+}
+
+.select-arrow span {
+  font-size: 0.8rem;
+  color: #718096;
+}
+
+.selection-help {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #718096;
+}
+
+.review-footer {
+  padding: 1.5rem;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  align-items: center;
+  background: #fafafa;
+}
+
+.modern-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  text-decoration: none;
+  min-width: 120px;
+  justify-content: center;
+}
+
+.modern-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.btn-secondary.modern-btn {
+  background: #f3f4f6;
+  color: #374151;
+  border: 2px solid #d1d5db;
+}
+
+.btn-secondary.modern-btn:hover:not(:disabled) {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.primary-gradient {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: 2px solid transparent;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.primary-gradient:hover:not(:disabled) {
+  background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-icon {
+  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 </style>
