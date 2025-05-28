@@ -31,7 +31,8 @@ services:
     ports:
       - "8081:80"
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
 
   backend:
     build:
@@ -43,8 +44,12 @@ services:
     environment:
       - DATABASE_URL=mysql+pymysql://flaskuser:flaskpass@mysql/cloud_docs
       - SECRET_KEY=dev-key
+    command: >
+      sh -c "python init_db.py && 
+             flask run --host=0.0.0.0 --port=5001"
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
 
   frontend:
     build: ./frontend

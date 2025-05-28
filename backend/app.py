@@ -473,15 +473,18 @@ def rename_file(file_id):
 # ────────────── Auth & password flows (unchanged) ───────────────────────
 @app.route('/register', methods=['POST'])
 def register():
-    data = request.json or {}
-    if User.query.filter_by(username=data.get('username')).first():
-        return {"error": "Username already exists"}, 400
-    if User.query.filter_by(email=data.get('email')).first():
-        return {"error": "Email already registered"}, 400
+    data = request.get_json()
+    if not data or not data.get('username') or not data.get('password') or not data.get('email'):
+        return jsonify({"message": "Username, email, and password are required"}), 400
 
-    user = User(username=data['username'], email=data['email'])
+    if User.query.filter_by(username=data['username']).first() or \
+       User.query.filter_by(email=data['email']).first():
+        return jsonify({"message": "User already exists"}), 400
+
+    user = User(username=data['username'], email=data['email'], grade=data['grade'])
     user.set_password(data['password'])
-    db.session.add(user); db.session.commit()
+    db.session.add(user)
+    db.session.commit()
 
     # create root folder + disk dir
     root = Folder(name='Root folder', owner_id=user.id, parent_id=None)
@@ -493,6 +496,7 @@ def register():
 
 @app.route('/login', methods=['POST'])
 def login():
+    # return {"message": "Login successful"}
     data = request.json or {}
     user = User.query.filter_by(username=data.get('username')).first()
     if user and user.check_password(data.get('password', '')):

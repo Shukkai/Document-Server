@@ -13,11 +13,16 @@
           <input v-model="email" type="email" required />
         </div>
   
-        <div class="field">
+                <div class="field">
           <label>Password</label>
           <input v-model="password" type="password" required />
         </div>
-  
+
+        <div class="field">
+          <label>Grade</label>
+          <input v-model="grade" type="number" min="0" max="12" required />
+        </div>
+
         <button type="submit">Register</button>
         <p v-if="errorMessage"  class="error">{{ errorMessage }}</p>
         <p v-if="successMessage" class="success">{{ successMessage }}</p>
@@ -37,6 +42,7 @@
   const username       = ref('')
   const email          = ref('')
   const password       = ref('')
+  const grade          = ref('')
   const errorMessage   = ref('')
   const successMessage = ref('')
   const router         = useRouter()
@@ -44,7 +50,7 @@
   async function handleRegister () {
     errorMessage.value = successMessage.value = ''
     try {
-      await axios.post('/register', { username: username.value, email: email.value, password: password.value })
+      await axios.post('/register', { username: username.value, email: email.value, password: password.value, grade: parseInt(grade.value) })
       successMessage.value = 'Registered! Redirecting…'
       setTimeout(() => router.push('/'), 1200)
     } catch (err) {

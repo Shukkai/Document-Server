@@ -9,11 +9,12 @@ db = SQLAlchemy()
 # ---------------- User, File & Folder tables ----------------
 class User(db.Model, UserMixin):
     id          = db.Column(db.Integer, primary_key=True)
-    username    = db.Column(db.String(64),  unique=True, nullable=False)
-    email       = db.Column(db.String(128), unique=True)
-    password_hash = db.Column(db.Text,      nullable=False)
+    username    = db.Column(db.String(256),  unique=True, nullable=False)
+    email       = db.Column(db.String(256), unique=True)
+    password_hash = db.Column(db.String(256),      nullable=False)
+    grade       = db.Column(db.Integer, nullable=True)
     is_admin    = db.Column(db.Boolean, default=False)
-    created_at  = db.Column(db.DateTime, server_default=db.func.now())
+    created_at  = db.Column(db.Date, server_default=db.func.now())
 
     files = db.relationship("File", backref="owner", lazy=True)
     folders = db.relationship("Folder", backref="owner", lazy=True)
