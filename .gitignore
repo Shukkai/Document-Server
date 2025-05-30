@@ -9,3 +9,6 @@
 
 cookies.txt
 **uploads/
+
+client_secret_*.json
+.env

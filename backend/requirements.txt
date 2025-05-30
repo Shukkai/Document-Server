@@ -6,3 +6,6 @@ cryptography
 flask_login
 passlib
 bcrypt
+authlib
+requests
+python-dotenv

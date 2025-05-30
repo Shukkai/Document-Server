@@ -3,18 +3,19 @@
     "version": "1.0.0",
     "private": true,
     "scripts": {
-      "dev": "vite",
-      "build": "vite build",
-      "serve": "vite preview"
+        "dev": "vite",
+        "build": "vite build",
+        "serve": "vite preview"
     },
     "dependencies": {
-      "axios": "^1.6.8",
-      "vue": "^3.4.15",
-      "vue-router": "^4.2.5",
-      "@vueup/vue-quill": "^1.2.0"
+        "@vueup/vue-quill": "^1.2.0",
+        "axios": "^1.6.8",
+        "vue": "^3.4.15",
+        "vue-router": "^4.2.5",
+        "vue3-google-login": "^2.0.33"
     },
     "devDependencies": {
-      "@vitejs/plugin-vue": "^5.0.4",
-      "vite": "^5.2.8"
+        "@vitejs/plugin-vue": "^5.0.4",
+        "vite": "^5.2.8"
     }
-  }
+}

@@ -14,7 +14,7 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -45,7 +45,7 @@ services:
       - DATABASE_URL=mysql+pymysql://flaskuser:flaskpass@mysql/cloud_docs
       - SECRET_KEY=dev-key
     command: >
-      sh -c "python init_db.py && 
+      sh -c "python init_db.py &&
              flask run --host=0.0.0.0 --port=5001"
     depends_on:
       mysql:
