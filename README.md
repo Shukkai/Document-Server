@@ -59,15 +59,22 @@
 
 ### Running Locally
 
-1. Build and start the services:
+1. Create a `.env` file in the `./backend` directory with the following content:
+
+```env
+GOOGLE_CLIENT_ID = "your-google-client-id"
+GOOGLE_CLIENT_SECRET = "your-google-client-secret"
+```
+
+2. Build and start the services:
 
 ```bash
 docker-compose up --build
 ```
 
-2. Access the application:
+3. Access the application:
 
-•	Frontend: http://localhost:8080  
-•	Backend: http://localhost:5001  
-•	phpMyAdmin (Database Admin): http://localhost:8081 (Use `mysql` as host, `root` as user, and `root` as password)  
-•	add a admin/non-admin users for testing
+- Frontend: http://localhost:8080  
+- Backend: http://localhost:5001  
+- phpMyAdmin (Database Admin): http://localhost:8081 (Use `mysql` as host, `root` as user, and `root` as password)  
+- add a admin/non-admin users for testing

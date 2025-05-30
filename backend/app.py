@@ -39,6 +39,7 @@ load_dotenv()
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "your-google-client-id")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "your-google-client-secret")
 FRONTEND_ROOT = os.getenv("FRONTEND_ROOT", "http://localhost:8080")
+
 oauth = OAuth(app)
 google = oauth.register(
     name='google',
@@ -51,8 +52,6 @@ google = oauth.register(
     api_base_url='https://www.googleapis.com/oauth2/v1/',
     client_kwargs={
         'scope': 'openid email profile',
-        # 'prompt': 'select_account',  # Force account selection
-        # 'access_type': 'offline',     # Request offline access for refresh tokens
     },
     server_metadata_url= 'https://accounts.google.com/.well-known/openid-configuration'
 )
@@ -1452,10 +1451,11 @@ def create_default_test_user():
 @app.route('/auth/google/login')
 def google_login():
     """Redirect to Google OAuth login"""
-    # google = oauth.create_client('google')  # Create a Google OAuth client
     redirect_uri = url_for('google_callback', _external=True)
     if "localhost:5001" not in redirect_uri:
-        redirect_uri = redirect_uri.replace("localhost", "localhost:5001")
+        localhost_name = redirect_uri.split("://")[1].split("/")[0]
+        redirect_uri = redirect_uri.replace(localhost_name, "localhost:5001")
+        # redirect_uri = redirect_uri.replace("localhost", "localhost:5001")
     return google.authorize_redirect(redirect_uri)
 
 
@@ -1494,7 +1494,6 @@ def google_callback():
     # login the user
     login_user(user, remember=False, fresh=True)
 
-    # safe_name = quote_plus(ret_username)
     return redirect(f"{FRONTEND_ROOT}/oauth2/success")
 
 if __name__ == '__main__':
