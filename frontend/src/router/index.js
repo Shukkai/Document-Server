@@ -9,6 +9,7 @@ import ResetPasswordView   from '@/views/ResetPassword.vue'
 import UserInfoView        from '@/views/UserInfo.vue'
 import ReviewsView         from '@/views/Reviews.vue'
 import AdminDashboard      from '../views/AdminDashboard.vue'
+import OauthSuccess        from '@/views/OAuthSuccess.vue'
 
 /* -------- session cache ------------------ */
 export const sessionCache = ref(null)  // null = unknown
@@ -118,6 +119,11 @@ const routes = [
   { 
     path: '/login', 
     redirect: '/' 
+  },
+  {
+    path: '/oauth2/success',
+    name: 'OAuthSuccess',
+    component: OauthSuccess
   },
   {
     path: '/admin-dashboard',

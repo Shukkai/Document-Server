@@ -14,6 +14,12 @@
       </div>
 
       <button type="submit">Login</button>
+
+      <button
+        type="button"
+        @click="loginWithGoogle"
+      >使用 Google 進行登入</button>
+
       <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
     </form>
 
@@ -36,6 +42,10 @@ const username = ref('')
 const password = ref('')
 const errorMessage = ref('')
 const router = useRouter()
+
+function loginWithGoogle () {
+  window.location.href = "/api/auth/google/login"
+}
 
 async function handleLogin () {
   errorMessage.value = ''
@@ -65,6 +75,10 @@ async function promptReset () {
     alert('Something went wrong. Please try again.')
   }
 }
+
+// onMounted(() => {
+//   console.log('Login component mounted')
+// })
 </script>
 
 <style scoped>
@@ -72,7 +86,7 @@ async function promptReset () {
 .field { margin-bottom:1rem }
 .field label { display:block; margin-bottom:.25rem; font-weight:600 }
 .field input { width:100%; padding:.5rem .75rem; border:1px solid #ccc; border-radius:4px }
-button { width:100%; padding:.6rem; background:#3f51b5; color:#fff; border:none; border-radius:4px; cursor:pointer }
+button { width:100%; padding:.6rem; background:#3f51b5; color:#fff; border:none; border-radius:4px; cursor:pointer; margin-bottom: 1rem }
 button:hover { background:#3344a3 }
 .error { color:#e53935; margin-top:.75rem }
 .switch, .reset-link { margin-top:1rem; text-align:center }

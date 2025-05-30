@@ -3,7 +3,7 @@ from __future__ import annotations
 import os, time
 from datetime import datetime
 
-from flask import Flask, request, jsonify, send_from_directory, current_app
+from flask import Flask, request, jsonify, send_from_directory, current_app, redirect, url_for, render_template
 from flask_cors import CORS
 from flask_login import (
     LoginManager, login_user, logout_user,
@@ -22,6 +22,9 @@ from models import (
 )
 from config import Config
 
+from authlib.integrations.flask_client import OAuth
+from dotenv import load_dotenv
+
 # ───────────────────────────── Flask & Login ─────────────────────────────
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -30,6 +33,29 @@ db.init_app(app)
 login_manager               = LoginManager()
 login_manager.login_view    = None          #   ↳ return JSON, no 302
 login_manager.init_app(app)
+
+# google oauth
+load_dotenv()
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "your-google-client-id")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "your-google-client-secret")
+FRONTEND_ROOT = os.getenv("FRONTEND_ROOT", "http://localhost:8080")
+oauth = OAuth(app)
+google = oauth.register(
+    name='google',
+    client_id=GOOGLE_CLIENT_ID,
+    client_secret=GOOGLE_CLIENT_SECRET,
+    # access_token_url='https://accounts.google.com/o/oauth2/token',
+    access_token_params=None,
+    # authorize_url='https://accounts.google.com/o/oauth2/auth',
+    authorize_params=None,
+    api_base_url='https://www.googleapis.com/oauth2/v1/',
+    client_kwargs={
+        'scope': 'openid email profile',
+        # 'prompt': 'select_account',  # Force account selection
+        # 'access_type': 'offline',     # Request offline access for refresh tokens
+    },
+    server_metadata_url= 'https://accounts.google.com/.well-known/openid-configuration'
+)
 
 @login_manager.user_loader
 def load_user(uid):          # SQLAlchemy 2.x: Session.get
@@ -1421,6 +1447,55 @@ def create_default_test_user():
         print("✅ Created default test user (username: test, password: test)")
     else:
         print("ℹ️  Test user already exists")
+
+
+@app.route('/auth/google/login')
+def google_login():
+    """Redirect to Google OAuth login"""
+    # google = oauth.create_client('google')  # Create a Google OAuth client
+    redirect_uri = url_for('google_callback', _external=True)
+    if "localhost:5001" not in redirect_uri:
+        redirect_uri = redirect_uri.replace("localhost", "localhost:5001")
+    return google.authorize_redirect(redirect_uri)
+
+
+@app.route('/auth/google/callback')
+def google_callback():
+    """Handle Google OAuth callback"""
+    google = oauth.create_client('google')  # Create a Google OAuth client
+    token = google.authorize_access_token()
+    user_info = google.get('userinfo').json()
+
+    email = user_info.get('email')
+    if not email:
+        return {"error": "No email found in Google user info"}, 400
+
+    user = User.query.filter_by(email=email).first()
+    if user is None:
+        base = email.split('@')[0]
+        username = base
+        i = 1
+        while User.query.filter_by(username=username).first():
+            username = f"{base}{i}"; i += 1
+
+        user = User(username=username, email=email, grade=33)
+        user.set_password(os.urandom(16).hex())   # SSO 帳號不用真正密碼
+
+        db.session.add(user)
+        db.session.commit()
+
+        root = Folder(name='Root folder', owner_id=user.id, parent_id=None)
+        db.session.add(root)
+        db.session.commit()
+
+        os.makedirs(os.path.join(Config.UPLOAD_FOLDER, username),
+                exist_ok=True)
+
+    # login the user
+    login_user(user, remember=False, fresh=True)
+
+    # safe_name = quote_plus(ret_username)
+    return redirect(f"{FRONTEND_ROOT}/oauth2/success")
 
 if __name__ == '__main__':
     os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
