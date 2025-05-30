@@ -47,7 +47,20 @@
       <div v-if="activeView === 'upload'" class="upload-section content-section">
         <h2>Upload New File</h2>
         <div class="upload-controls">
-          <input type="file" @change="onFileChange" class="file-input"/>
+
+          <input
+            id="filePick"
+            type="file"
+            class="sr-only"
+            @change="onFileChange"
+          />
+          <label for="filePick" class="file-input" v-if ="!selectedFile">
+            📂 選擇檔案或拖放到此
+          </label>
+          <label for="filePick" class="file-input" v-else>
+            {{ selectedFile.name }}
+          </label>
+
           <div class="folder-selection">
             <label for="folder-select">Select destination folder:</label>
             <select id="folder-select" v-model="selectedFolderId" class="folder-select">
@@ -606,7 +619,7 @@ onUnmounted(() => {
 }
 .alert-close:hover { opacity: 1; }
 
-.icon { /* General icon styling if needed */ }
+/* .icon { General icon styling if needed } */
 
 /* ──────────── Responsive Design ──────────── */
 @media (max-width: 768px) {
@@ -626,4 +639,6 @@ onUnmounted(() => {
     font-size: 16px; /* Prevents zoom on iOS */
   }
 }
+
+.sr-only    { position:absolute; left:-9999px; }
 </style>

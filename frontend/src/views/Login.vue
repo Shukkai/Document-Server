@@ -75,10 +75,6 @@ async function promptReset () {
     alert('Something went wrong. Please try again.')
   }
 }
-
-// onMounted(() => {
-//   console.log('Login component mounted')
-// })
 </script>
 
 <style scoped>
@@ -88,7 +84,13 @@ async function promptReset () {
 .field input { width:100%; padding:.5rem .75rem; border:1px solid #ccc; border-radius:4px }
 button { width:100%; padding:.6rem; background:#3f51b5; color:#fff; border:none; border-radius:4px; cursor:pointer; margin-bottom: 1rem }
 button:hover { background:#3344a3 }
-.error { color:#e53935; margin-top:.75rem }
+.error { color:#e53935; margin-top:.75rem; text-align:center; animation: shake .5s ease-in-out; }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  50% { transform: translateX(5px); }
+  75% { transform: translateX(-5px); }
+}
 .switch, .reset-link { margin-top:1rem; text-align:center }
 .reset-link a { color: #3f51b5; text-decoration: underline; cursor: pointer }
 </style>
