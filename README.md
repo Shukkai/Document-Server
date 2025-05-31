@@ -82,5 +82,5 @@ docker-compose up --build
 4. Run tests for the backend:
 ```
 cd backend
-pytest
+pytest --cov=./
 ```
