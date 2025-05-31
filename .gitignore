@@ -18,3 +18,4 @@ client_secret_*.json
 .pytest_cache/
 .coverage
 *.xml
+htmlcov/
