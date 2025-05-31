@@ -1,6 +1,6 @@
 # tests/test_versions.py
 from io import BytesIO
-from models import User, db
+from ..models import User, db
 
 def _auth(client):
     client.post("/register", json={

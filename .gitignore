@@ -10,5 +10,10 @@
 cookies.txt
 **uploads/
 
+# auth
 client_secret_*.json
 .env
+
+# pytest
+.pytest_cache/
+.coverage

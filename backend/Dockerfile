@@ -18,4 +18,4 @@ ENV FLASK_ENV=production
 
 EXPOSE 5001
 
-CMD ["python", "app.py"]
+CMD ["python", "init_db.py", "&&", "python", "app.py"]

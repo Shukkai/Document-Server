@@ -1,6 +1,6 @@
 def test_request_and_complete_review(client, flask_app):
     from io import BytesIO
-    from models import User, db
+    from ..models import User, db
 
     def _create_user(client, name):
         client.post("/register", json={

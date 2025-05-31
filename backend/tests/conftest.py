@@ -7,7 +7,7 @@ import pytest
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 # ✅ 正確引入 Flask 應用
-from backend.app import app as real_app, db
+from ..app import app as real_app, db
 
 @pytest.fixture(scope="session")
 def flask_app():

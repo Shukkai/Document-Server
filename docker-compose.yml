@@ -49,8 +49,7 @@ services:
       - FLASK_APP=app.py
       - PYTHONPATH=/app/backend
     command: >
-      sh -c "python init_db.py &&
-            flask run --host=0.0.0.0 --port=5001"
+      sh -c "flask run --host=0.0.0.0 --port=5001"
     depends_on:
       mysql:
         condition: service_healthy
