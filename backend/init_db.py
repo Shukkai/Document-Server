@@ -1,7 +1,6 @@
-from app import app, db  # Assuming your Flask app and db are initialized in app.py
-from models import User
+from .models import User
 
-def create_test_user():
+def create_test_user(app, db):
     with app.app_context():
         db.create_all()  # Create tables if they don't exist
 

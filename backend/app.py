@@ -21,7 +21,7 @@ from .models import (
     generate_reset_token, verify_reset_token,
 )
 from .config import Config
-
+from .init_db import create_test_user
 from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
 
@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 app = Flask(__name__)
 app.config.from_object(Config)
 db.init_app(app)
-
+create_test_user(app, db)
 login_manager               = LoginManager()
 login_manager.login_view    = None          #   ↳ return JSON, no 302
 login_manager.init_app(app)
