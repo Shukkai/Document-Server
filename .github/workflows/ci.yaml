@@ -23,14 +23,17 @@ jobs:
       - name: Run tests with coverage
         run: |
           mkdir -p uploads  # Ensure the upload folder exists if needed
-          pytest --cov=app --cov-report=term-missing
+          pytest --cov=app --cov-report=term-missing --cov-report=xml --cov-report=html
         working-directory: ./backend
 
       - name: List files
         run: ls -la ./backend
 
-      - name: Upload coverage report
+      - name: Upload coverage data and report
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report
-          path: ./backend/.coverage
+          name: coverage-data
+          path: |
+            ./backend/.coverage
+            ./backend/htmlcov
+            ./backend/coverage.xml
