@@ -31,3 +31,30 @@ jobs:
         with:
           name: coverage-data
           path: ./backend/htmlcov
+
+      - name: Add coverage summary to Actions run
+        if: always()                       # still runs even if tests fail
+        run: |
+          python - <<'PY'
+          import os, xml.etree.ElementTree as ET, textwrap, sys, pathlib
+          xml_path = pathlib.Path("backend/coverage.xml")
+          if not xml_path.exists():
+              print("No coverage.xml, nothing to summarise"); sys.exit(0)
+
+          root = ET.parse(xml_path).getroot()
+          line_rate   = float(root.attrib["line-rate"])   * 100
+          branch_rate = float(root.attrib.get("branch-rate", 0)) * 100
+
+          summary_md = textwrap.dedent(f"""\
+              ### 🧪 Coverage Summary
+
+              | Metric  | Percent |
+              | ------- | ------- |
+              | Line    | **{line_rate:.2f}%** |
+              | Branch  | {branch_rate:.2f}% |
+
+              _Full HTML report available in the “Artifacts” section (html-coverage)._  
+              """)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+              fh.write(summary_md)
+          PY
