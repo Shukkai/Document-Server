@@ -15,12 +15,12 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from models import (
+from .models import (
     db, File, Folder, User, FileVersion,
     DocumentReview, Notification,
     generate_reset_token, verify_reset_token,
 )
-from config import Config
+from .config import Config
 
 from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv

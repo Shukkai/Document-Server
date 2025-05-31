@@ -1,24 +1,21 @@
-# Use lightweight Python base image
 FROM python:3.10.1-slim
 
-# Set work directory inside container
 WORKDIR /app
 
-# Copy Python dependencies first (for caching)
-COPY requirements.txt .
+COPY backend/requirements.txt .
 
-# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the app
-COPY . .
+# ✅ 把整個 backend 複製到容器的 /app/backend
+COPY backend /app/backend
 
-# Expose Flask port
-EXPOSE 5001
+# ✅ 設定為工作目錄
+WORKDIR /app/backend
 
-# Set Flask environment variables
+ENV PYTHONPATH=/app/backend
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 
-# Run the Flask app
-CMD ["python", "app.py"]
+EXPOSE 5001
+
+CMD ["python", "init_db.py", "&&", "python", "app.py"]
