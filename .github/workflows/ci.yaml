@@ -23,8 +23,7 @@ jobs:
       - name: Run tests with coverage
         run: |
           mkdir -p uploads  # Ensure the upload folder exists if needed
-          mkdir -p pytest_reports  # Ensure pytest reports folder exists
-          pytest --cov=./pytest_reports --cov-report=term-missing --cov-report=xml --cov-report=html
+          pytest --cov=./ --cov-report=term-missing --cov-report=xml --cov-report=html
         working-directory: ./backend
 
       - name: Upload coverage data and report
