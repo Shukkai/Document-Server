@@ -36,17 +36,21 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     volumes:
-      - ./backend:/app
+      - ./backend:/app/backend
+    working_dir: /app/backend
     ports:
       - "5001:5001"
     environment:
       - DATABASE_URL=mysql+pymysql://flaskuser:flaskpass@mysql/cloud_docs
       - SECRET_KEY=dev-key
+      - FLASK_APP=app.py
+      - PYTHONPATH=/app/backend
     command: >
       sh -c "python init_db.py &&
-             flask run --host=0.0.0.0 --port=5001"
+            flask run --host=0.0.0.0 --port=5001"
     depends_on:
       mysql:
         condition: service_healthy

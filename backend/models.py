@@ -14,7 +14,7 @@ class User(db.Model, UserMixin):
     password_hash = db.Column(db.String(256),      nullable=False)
     grade       = db.Column(db.Integer, nullable=True)
     is_admin    = db.Column(db.Boolean, default=False)
-    created_at  = db.Column(db.Date, server_default=db.func.now())
+    created_at  = db.Column(db.DateTime, server_default=db.func.now())
 
     files = db.relationship("File", backref="owner", lazy=True)
     folders = db.relationship("Folder", backref="owner", lazy=True)

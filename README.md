@@ -78,3 +78,10 @@ docker-compose up --build
 - Backend: http://localhost:5001  
 - phpMyAdmin (Database Admin): http://localhost:8081 (Use `mysql` as host, `root` as user, and `root` as password)  
 - add a admin/non-admin users for testing
+
+4. Run testing
+```
+cd backend
+PYTHONPATH=.:.. pytest tests
+(quite dangerous)
+```
