@@ -14,6 +14,8 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from sqlalchemy import inspect
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
+from authlib.integrations.flask_client import OAuth
 
 from .models import (
     db, File, Folder, User, FileVersion,
@@ -21,18 +23,20 @@ from .models import (
     generate_reset_token, verify_reset_token,
 )
 from .config import Config
-from .init_db import create_test_user
-from authlib.integrations.flask_client import OAuth
-from dotenv import load_dotenv
+from .init_db import create_test_user, create_admin_and_test_users
+
 
 # ───────────────────────────── Flask & Login ─────────────────────────────
 app = Flask(__name__)
 app.config.from_object(Config)
 db.init_app(app)
-create_test_user(app, db)
+
 login_manager               = LoginManager()
 login_manager.login_view    = None          #   ↳ return JSON, no 302
 login_manager.init_app(app)
+
+# create test user and admin 
+create_admin_and_test_users(app, db)
 
 # google oauth
 load_dotenv()
