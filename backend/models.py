@@ -144,6 +144,6 @@ def generate_reset_token(user, hours: int = 1) -> str:
 def verify_reset_token(token: str):
     """Return the User if token is valid and not expired, else None."""
     rec = ResetToken.query.filter_by(token=token).first()
-    if rec and rec.expires_at > datetime.now(timezone.utc):
+    if rec and rec.expires_at.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
         return rec.user
     return None
