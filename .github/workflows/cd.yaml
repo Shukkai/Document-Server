@@ -28,5 +28,5 @@ jobs:
 
       - name: Build & push backend image
         run: |
-          docker build -t ${{ steps.lower_repo.outputs.tag }}:latest ./backend
-          docker push ${{ steps.lower_repo.outputs.tag }}:latest
+          docker build -f backend/Dockerfile -t ghcr.io/${{ github.repository_owner }}/doc-backend:latest .
+          docker push ghcr.io/${{ github.repository_owner }}/doc-backend:latest
