@@ -30,3 +30,9 @@ jobs:
         run: |
           docker build -f backend/Dockerfile -t ${{ steps.lower_repo.outputs.tag }}:latest .
           docker push ${{ steps.lower_repo.outputs.tag }}:latest
+
+      - name: Build & push frontend image
+        run: |
+          docker build -f frontend/Dockerfile -t ${{ steps.lower_repo.outputs.tag }}-frontend:latest ./frontend
+          docker push ${{ steps.lower_repo.outputs.tag }}-frontend:latest
+
