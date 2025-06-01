@@ -24,45 +24,29 @@
     </div>
 
     <div class="folder-tree">
-      <div v-for="folder in folders" :key="folder.id" class="folder-item">
+      <div class="folder-item">
         <!-- Folder Header -->
-        <div class="folder-header" @click="toggleFolder(folder.id)">
+        <div class="folder-header" @click="toggleFolder(0)">
           <div class="folder-info">
-            <button class="folder-toggle" :class="{ 'expanded': isFolderExpanded(folder.id) }">
-              <span class="toggle-icon">{{ isFolderExpanded(folder.id) ? '▼' : '▶' }}</span>
+            <button class="folder-toggle" :class="{ 'expanded': isFolderExpanded(0) }">
+              <span class="toggle-icon">{{ isFolderExpanded(0) ? '▼' : '▶' }}</span>
             </button>
             <span class="folder-icon">📁</span>
-            <h3 class="folder-name">{{ folder.name }}</h3>
+            <h3 class="folder-name">Public Folder</h3>
             <span class="folder-stats">
-              {{ folder.files?.length || 0 }} files
-              <span v-if="folder.children?.length">
-                • {{ folder.children.length }} subfolders
-              </span>
+              {{ publicFiles?.length || 0 }} files
             </span>
-          </div>
-          
-          <div class="folder-actions" @click.stop>
-            <button
-              v-if="folder.parent_id !== null"
-              class="btn btn-danger btn-sm"
-              @click="handleDeleteFolder(folder.id)"
-              :disabled="isLoading"
-              title="Delete folder"
-            >
-              <span class="icon">🗑️</span>
-              Delete
-            </button>
           </div>
         </div>
 
         <!-- Folder Contents (collapsible) -->
         <transition name="folder-expand">
-          <div v-if="isFolderExpanded(folder.id)" class="folder-contents">
+          <div v-if="isFolderExpanded(0)" class="folder-contents">
             <!-- Files in this folder -->
-            <div v-if="folder.files?.length > 0" class="files-section">
+            <div v-if="publicFiles?.length > 0" class="files-section">
               <div class="files-grid">
                 <div 
-                  v-for="file in folder.files" 
+                  v-for="file in publicFiles" 
                   :key="file.id" 
                   class="file-card"
                 >
@@ -73,9 +57,6 @@
                       <div class="file-details">
                         <h4 class="file-name" :title="file.name">{{ file.name }}</h4>
                         <div class="file-status">
-                          <span v-if="file.is_under_review" class="review-status">
-                            📋 Under Review by {{ file.active_review.reviewer }}
-                          </span>
                           <span class="file-date">{{ formatDate(file.uploaded_at) }}</span>
                         </div>
                       </div>
@@ -105,32 +86,6 @@
 
                   <!-- File Actions -->
                   <div v-if="file.__showInfo" class="file-actions">
-                    <!-- Move file -->
-                    <div class="move-section">
-                      <select
-                        v-model="file.__target"
-                        class="move-select"
-                        :disabled="isLoading"
-                      >
-                        <option disabled value="">Move to folder...</option>
-                        <option
-                          v-for="opt in flatOptions"
-                          :key="opt.id || 'root'"
-                          :value="opt.id"
-                          :disabled="opt.id === folder.id"
-                        >
-                          📁 {{ opt.label }}
-                        </option>
-                      </select>
-                      <button
-                        class="btn btn-primary btn-sm"
-                        :disabled="file.__target === undefined || file.__target === '' || isLoading"
-                        @click="move(file)"
-                        title="Move file"
-                      >
-                        <span class="icon">📤</span>
-                      </button>
-                    </div>
 
                     <!-- Action buttons -->
                     <div class="action-buttons">
@@ -145,222 +100,14 @@
                         <span class="icon">📥</span>
                         Download
                       </a>
-
-                      <button
-                        v-if="isTextEditable(file)"
-                        class="btn btn-warning btn-sm"
-                        @click="openTextEditor(file)"
-                        :disabled="isLoading || file.is_under_review"
-                        :title="file.is_under_review ? 'Cannot edit while under review' : 'Edit file content'"
-                      >
-                        <span class="icon">✏️</span>
-                        Edit
-                      </button>
-
-                      <button
-                        class="btn btn-secondary btn-sm" 
-                        @click="openRenameModal(file)"
-                        :disabled="isLoading || file.is_under_review"
-                        :title="file.is_under_review ? 'Cannot rename while under review' : 'Rename file'"
-                      >
-                        <span class="icon">🏷️</span>
-                        Rename
-                      </button>
-                      
-                      <!--  Publish file -->
-                      <button
-                        class="btn btn-publish btn-sm"
-                        @click="handlePublishFile(file)"
-                        :disabled="isLoading || file.is_under_review"
-                        :title="file.is_under_review ? 'Cannot publish while under review' : 'Publish file'"
-                      >
-                        <span class="icon">🚀</span>
-                        Publish {{ file.is_published ? 'Again' : '' }}
-                      </button>
-
-                      <!-- Review actions -->
-                      <button
-                        v-if="file.is_under_review"
-                        class="btn btn-cancel btn-sm"
-                        @click="cancelReview(file)"
-                        :disabled="isLoading"
-                        title="Cancel review request"
-                      >
-                        <span class="icon">❌</span>
-                        Cancel Review
-                      </button>
-
-                      <button
-                        class="btn btn-info btn-sm"
-                        @click="showVersionControl(file)"
-                        :disabled="isLoading"
-                        title="Manage versions"
-                      >
-                        <span class="icon">📋</span>
-                        Versions
-                      </button>
-
-                      <button
-                        class="btn btn-danger btn-sm"
-                        @click="handleDeleteFile(file.id)"
-                        :disabled="isLoading || file.is_under_review"
-                        :title="file.is_under_review ? 'Cannot delete while under review' : 'Delete file'"
-                      >
-                        <span class="icon">🗑️</span>
-                        Delete
-                      </button>
                     </div>
                   </div>
+
                 </div>
               </div>
             </div>
-
-            <!-- No files message -->
-            <div v-else-if="!folder.children?.length" class="no-files">
-              <span class="icon">📂</span>
-              <p>This folder is empty</p>
-            </div>
-
-            <!-- Recursive children -->
-            <div v-if="folder.children?.length" class="subfolder-section">
-              <FolderTree
-                :folders="folder.children"
-                @delete-folder="handleDeleteFolder"
-                @delete-file="handleDeleteFile"
-                @refresh-tree="$emit('refresh-tree')"
-              />
-            </div>
           </div>
         </transition>
-      </div>
-    </div>
-
-    <!-- Version Control Modal -->
-    <div v-if="selectedFile" class="modal-overlay" @click="closeVersionControl">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>
-            <span class="icon">📋</span>
-            Version Control - {{ selectedFile.name }}
-          </h3>
-          <button class="modal-close" @click="closeVersionControl">×</button>
-        </div>
-        
-        <div class="modal-body">
-          <div class="file-info">
-            <p><strong>Type:</strong> {{ selectedFile.mimetype }}</p>
-            <p v-if="selectedFile.updated_at">
-              <strong>Last Modified:</strong> {{ formatDate(selectedFile.updated_at) }}
-            </p>
-          </div>
-          
-          <FileVersion 
-            :fileId="selectedFile.id"
-            :isAdmin="currentUserIsAdmin"
-            @success="handleVersionSuccess"
-            @error="handleVersionError"
-          />
-        </div>
-      </div>
-    </div>
-
-    <!-- Text Editor Modal -->
-    <TextEditor
-      v-if="editingFile"
-      :fileId="editingFile.id"
-      :initialFilename="editingFile.name"
-      @close="closeTextEditor"
-      @save-success="handleSaveSuccess"
-      @save-and-review="handleSaveAndReview"
-    />
-
-    <!-- Rename File Modal -->
-    <RenameFileModal
-      v-if="fileToRename"
-      :fileId="fileToRename.id"
-      :currentFilename="fileToRename.name"
-      @close="closeRenameModal"
-      @rename-success="handleRenameSuccess"
-    />
-
-    <!-- Request Review Modal -->
-    <div v-if="fileToReview" class="modal-overlay" @click="closeReviewModal">
-      <div class="modal-content review-modal" @click.stop>
-        <div class="modal-header review-header">
-          <div class="header-content">
-            <div class="header-icon">
-              <span class="icon">📝</span>
-            </div>
-            <div class="header-text">
-              <h3>Request Review</h3>
-              <p class="header-subtitle">Send this document for review</p>
-            </div>
-          </div>
-          <button class="modal-close" @click="closeReviewModal">×</button>
-        </div>
-        
-        <div class="modal-body review-body">
-          <div class="file-info review-file-info">
-            <div class="file-header">
-              <div class="file-icon">
-                {{ getFileIcon(fileToReview.mimetype) }}
-              </div>
-              <div class="file-details">
-                <h4 class="file-name">{{ fileToReview.name }}</h4>
-                <p class="file-type">{{ formatFileType(fileToReview.mimetype) }}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div class="reviewer-selection review-selection">
-            <label for="reviewer-select" class="selection-label">
-              <span class="label-icon">👤</span>
-              Select Reviewer
-            </label>
-            <div class="select-wrapper">
-              <select 
-                id="reviewer-select" 
-                v-model="selectedReviewer" 
-                class="reviewer-select modern-select"
-                :disabled="isLoading"
-              >
-                <option value="" disabled>Choose a reviewer...</option>
-                <option 
-                  v-for="user in users" 
-                  :key="user.id" 
-                  :value="user.id"
-                >
-                  {{ user.username }} ({{ user.email }})
-                </option>
-              </select>
-              <div class="select-arrow">
-                <span>▼</span>
-              </div>
-            </div>
-            <p class="selection-help">The selected reviewer will be notified about your request</p>
-          </div>
-        </div>
-
-        <div class="modal-footer review-footer">
-          <button 
-            class="btn btn-secondary modern-btn" 
-            @click="closeReviewModal" 
-            :disabled="isLoading"
-          >
-            <span class="btn-icon">✕</span>
-            Cancel
-          </button>
-          <button 
-            class="btn btn-primary modern-btn primary-gradient" 
-            @click="requestReview" 
-            :disabled="!selectedReviewer || isLoading"
-          >
-            <span v-if="isLoading" class="btn-icon loading">⏳</span>
-            <span v-else class="btn-icon">📤</span>
-            <span v-if="isLoading">Sending...</span>
-            <span v-else>Send Review Request</span>
-          </button>
-        </div>
       </div>
     </div>
   </div>
@@ -369,14 +116,10 @@
 <script setup>
 import { computed, defineProps, defineEmits, ref, watch, onMounted } from 'vue'
 import axios from 'axios'
-import FolderTree from './FolderTree.vue'
-import FileVersion from './FileVersion.vue'
-import TextEditor from './TextEditor.vue'
-import RenameFileModal from './RenameFileModal.vue'
 
 /* ---------- props / emits ---------- */
-const props = defineProps({ folders: { type: Array, required: true } })
-const emit = defineEmits(['delete-folder', 'delete-file', 'refresh-tree'])
+const props = defineProps({ publicFiles: { type: Array, required: true } })
+const emit = defineEmits(['refresh-tree'])
 
 /* ---------- state ---------- */
 const isLoading = ref(false)
@@ -392,16 +135,14 @@ const selectedReviewer = ref(null)
 const currentUserIsAdmin = ref(false)
 
 /* ---------- auto-expand root folders ---------- */
-watch(() => props.folders, (newFolders) => {
-  // Auto-expand root folders when they're loaded
-  if (newFolders && newFolders.length > 0) {
-    newFolders.forEach(folder => {
-      if (folder.parent_id === null) {
-        expandedFolders.value.add(folder.id)
-      }
-    })
+watch(() => props.publicFiles, (newpublicFiles) => {
+  if (newpublicFiles && newpublicFiles.length > 0) {
+    // Automatically expand the root folder if it has children
+    expandedFolders.value.add(0) // Assuming 0 is the ID for the root public folder
+  } else {
+    expandedFolders.value.clear() // Clear if no files are present
   }
-}, { immediate: true })
+}, { immediate: true, deep: true })
 
 onMounted(async () => {
   try {
@@ -413,11 +154,21 @@ onMounted(async () => {
       // Not authenticated or user data missing, assume not admin
       currentUserIsAdmin.value = false;
     }
+
+    // pollingInterval = setInterval(() =>{
+    //   fetchData()
+    // }, 1000)
+    
   } catch (error) {
     console.error('Error fetching user session status in FolderTree:', error);
     currentUserIsAdmin.value = false; // On error, assume not admin
   }
 });
+
+const fetchPublic = async () => {
+  const res = await axios.get('/public-files', { withCredentials:true })
+  props.publicFiles = res.data || []
+}
 
 /* ---------- helpers ---------- */
 const baseURL = axios.defaults.baseURL
@@ -461,51 +212,7 @@ function formatDate(dateString) {
   })
 }
 
-/* Flatten tree to build "move" options ---------------------------------- */
-function flatten(folder, buffer = [], prefix = '') {
-  if (!folder) return buffer
-  buffer.push({ id: folder.id, label: `${prefix}${folder.name}` })
-  folder.children?.forEach(c =>
-    flatten(c, buffer, `${prefix}${folder.name}/`)
-  )
-  return buffer
-}
-
-const flatOptions = computed(() => {
-  const list = [];
-  // Add root folder option first (with null ID for moving to root)
-  list.push({ id: null, label: 'Root folder' });
-
-  // Helper function to recursively add folders to the list
-  function addFoldersRecursively(folders, prefix = '') {
-    folders.forEach(folder => {
-      // Avoid adding a direct representation of the root folder if it's passed in props.folders
-      // especially if props.folders itself is the root and its name is 'root'
-      // The generic "Root folder" with id: null is already added.
-      if (folder.parent_id === null && (folder.name.toLowerCase() === 'root' || folder.name === 'Root folder')) {
-        if (folder.children && folder.children.length > 0) {
-          addFoldersRecursively(folder.children, ''); // Start with no prefix for children of actual root
-        }
-        return; // Skip adding the root object itself as a named option if it's like {name: 'root', ...}
-      }
-
-      list.push({ id: folder.id, label: `${prefix}${folder.name}` });
-      if (folder.children && folder.children.length > 0) {
-        addFoldersRecursively(folder.children, `${prefix}${folder.name}/`);
-      }
-    });
-  }
-
-  // Process props.folders. If props.folders is an array containing the root folder itself,
-  // the logic inside addFoldersRecursively will handle its children.
-  addFoldersRecursively(props.folders);
-
-  return list.filter((opt, index, self) => 
-    index === self.findIndex((o) => o.id === opt.id && o.label === opt.label)
-  );
-})
-
-/* ---------- folder expansion ---------- */
+/* ---------- expansion ---------- */
 function toggleFolder(folderId) {
   if (expandedFolders.value.has(folderId)) {
     expandedFolders.value.delete(folderId)
@@ -518,290 +225,8 @@ function isFolderExpanded(folderId) {
   return expandedFolders.value.has(folderId)
 }
 
-/* ---------- version control ---------- */
-function showVersionControl(file) {
-  selectedFile.value = file
-}
-
-function closeVersionControl() {
-  selectedFile.value = null
-}
-
-function handleVersionSuccess(message) {
-  error.value = null
-  successMessage.value = message || 'Version operation completed successfully'
-  emit('refresh-tree')
-  setTimeout(() => {
-    successMessage.value = null
-  }, 3000)
-}
-
-function handleVersionError(message) {
-  successMessage.value = null
-  error.value = message || 'Version operation failed'
-  setTimeout(() => {
-    error.value = null
-  }, 5000)
-}
-
-/* ---------- text editor functions ---------- */
-function openTextEditor(file) {
-  editingFile.value = file;
-}
-
-function closeTextEditor() {
-  editingFile.value = null;
-}
-
-function handleSaveSuccess() {
-  successMessage.value = 'File content saved successfully!';
-  closeTextEditor();
-  emit('refresh-tree'); // Refresh folder tree to show updated file stats (e.g., modified date if backend updates it)
-   setTimeout(() => {
-    successMessage.value = null;
-  }, 3000);
-}
-
-async function handleSaveAndReview(fileId) {
-  try {
-    successMessage.value = 'File saved! Opening review request...';
-    closeTextEditor();
-    
-    // Force refresh the tree and wait for it to complete
-    emit('refresh-tree');
-    
-    // Wait longer to ensure the tree has been refreshed with latest data
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Try to find the updated file in the refreshed tree
-    const findFileInFolders = (folders, targetId) => {
-      for (const folder of folders) {
-        if (folder.files) {
-          const file = folder.files.find(f => f.id === targetId);
-          if (file) return file;
-        }
-        if (folder.children) {
-          const file = findFileInFolders(folder.children, targetId);
-          if (file) return file;
-        }
-      }
-      return null;
-    };
-    
-    let file = findFileInFolders(props.folders, fileId);
-    
-    // If still not found, fetch fresh file data directly from the server
-    if (!file) {
-      try {
-        const response = await axios.get(`/file-content/${fileId}`, { withCredentials: true });
-        // Create a minimal file object with the essential data we need
-        file = {
-          id: fileId,
-          name: response.data.filename || 'File',
-          filename: response.data.filename || 'File',
-          mimetype: response.data.mimetype || 'unknown'
-        };
-      } catch (error) {
-        console.error('Failed to fetch file data:', error);
-        // Fallback: create a minimal file object
-        file = { 
-          id: fileId, 
-          name: 'File', 
-          filename: 'File', 
-          mimetype: 'unknown' 
-        };
-      }
-    }
-    
-    // Now open the review modal with the updated file data
-    openReviewModal(file);
-    successMessage.value = null;
-    
-  } catch (error) {
-    console.error('Error in handleSaveAndReview:', error);
-    error.value = 'Failed to open review request. Please try again.';
-    successMessage.value = null;
-    setTimeout(() => {
-      error.value = null;
-    }, 5000);
-  }
-}
-
-/* ---------- rename file functions ---------- */
-function openRenameModal(file) {
-  fileToRename.value = file;
-}
-
-function closeRenameModal() {
-  fileToRename.value = null;
-}
-
-function handleRenameSuccess(eventPayload) {
-  successMessage.value = `File renamed to "${eventPayload.newFilename}" successfully!`;
-  closeRenameModal();
-  emit('refresh-tree'); 
-  setTimeout(() => {
-    successMessage.value = null;
-  }, 3000);
-}
-
-/* ---------- review functions ---------- */
-async function fetchUsers() {
-  try {
-    const response = await axios.get('/users', { withCredentials: true })
-    users.value = response.data
-  } catch (error) {
-    console.error('Error fetching users:', error)
-    error.value = 'Failed to load users'
-  }
-}
-
-function openReviewModal(file) {
-  fileToReview.value = file
-  fetchUsers()
-}
-
-function closeReviewModal() {
-  fileToReview.value = null
-  selectedReviewer.value = null
-}
-
-async function requestReview() {
-  if (!selectedReviewer.value) {
-    error.value = 'Please select a reviewer'
-    return
-  }
-
-  isLoading.value = true
-  error.value = null
-
-  try {
-    await axios.post(`/request-review/${fileToReview.value.id}`, {
-      reviewer_id: selectedReviewer.value
-    }, { withCredentials: true })
-    
-    successMessage.value = 'Review request sent successfully!'
-    closeReviewModal()
-    emit('refresh-tree')
-    
-    setTimeout(() => {
-      successMessage.value = null
-    }, 3000)
-  } catch (e) {
-    error.value = e.response?.data?.error || 'Failed to request review'
-    setTimeout(() => {
-      error.value = null
-    }, 5000)
-  } finally {
-    isLoading.value = false
-  }
-}
-
-async function cancelReview(file) {
-  if (!confirm('Are you sure you want to cancel this review request?')) return
-
-  isLoading.value = true
-  error.value = null
-
-  try {
-    await axios.post(`/cancel-review/${file.id}`, {}, { withCredentials: true })
-    
-    successMessage.value = 'Review request cancelled successfully!'
-    emit('refresh-tree')
-    
-    setTimeout(() => {
-      successMessage.value = null
-    }, 3000)
-  } catch (e) {
-    error.value = e.response?.data?.error || 'Failed to cancel review'
-    setTimeout(() => {
-      error.value = null
-    }, 5000)
-  } finally {
-    isLoading.value = false
-  }
-}
-
 function toggleFileInfo(file) {
   file.__showInfo = !file.__showInfo
-}
-
-/* ---------- move file ---------- */
-async function move(file) {
-  isLoading.value = true
-  error.value = null
-  successMessage.value = null
-  
-  try {
-    // Handle null value for root folder properly
-    const targetFolderId = file.__target === null ? null : file.__target
-    
-    await axios.post(
-      '/move-file',
-      { file_id: file.id, target_folder_id: targetFolderId },
-      { withCredentials: true }
-    )
-    file.__target = ''          // reset dropdown after success
-    emit('refresh-tree')        // parent reloads -> rerender
-    
-    successMessage.value = 'File moved successfully!'
-    setTimeout(() => {
-      successMessage.value = null
-    }, 3000)
-  } catch (e) {
-    error.value = e.response?.data?.error || 'Move failed'
-    console.error('Move failed:', e)
-    setTimeout(() => {
-      error.value = null
-    }, 5000)
-  } finally {
-    isLoading.value = false
-  }
-}
-
-/* ---------- delete handlers ---------- */
-async function handleDeleteFolder(folderId) {
-  if (!confirm('Are you sure you want to delete this folder?')) return
-  
-  isLoading.value = true
-  error.value = null
-  
-  try {
-    await axios.delete(`/folders/${folderId}`, { withCredentials: true })
-    emit('delete-folder', folderId)
-    emit('refresh-tree')
-  } catch (e) {
-    error.value = e.response?.data?.error || 'Delete failed'
-    console.error('Delete folder failed:', e)
-  } finally {
-    isLoading.value = false
-  }
-}
-
-async function handleDeleteFile(fileId) {
-  if (!confirm('Are you sure you want to delete this file? The version history will be preserved.')) return
-  
-  isLoading.value = true
-  error.value = null
-  successMessage.value = null
-  
-  try {
-    await axios.delete(`/delete/${fileId}`, { withCredentials: true })
-    emit('delete-file', fileId)
-    emit('refresh-tree')
-    successMessage.value = 'File deleted successfully. Version history is preserved.'
-    setTimeout(() => {
-      successMessage.value = null
-    }, 3000)
-  } catch (e) {
-    error.value = e.response?.data?.error || 'Delete failed'
-    console.error('Delete file failed:', e)
-    setTimeout(() => {
-      error.value = null
-    }, 5000)
-  } finally {
-    isLoading.value = false
-  }
 }
 
 /* ---------- helper functions ---------- */
@@ -813,17 +238,6 @@ function isTextEditable(file) {
   return editableTextExtensions.includes(extension);
   // Or, you could check based on file.mimetype if it's reliable
   // return file.mimetype && file.mimetype.startsWith('text/'); 
-}
-
-/* ---------- Publish file for review ---------- */
-function handlePublishFile(file) {
-  try {
-    openReviewModal(file);
-    successMessage.value = null;
-  } catch (err) {
-    console.error('Failed to request review', err)
-    alert(err.response?.data?.error || 'Failed to request review')
-  }
 }
 
 </script>

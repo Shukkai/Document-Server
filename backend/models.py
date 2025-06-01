@@ -49,6 +49,7 @@ class File(db.Model):
     folder_id   = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
     current_version = db.Column(db.Integer, default=1)
     is_under_review = db.Column(db.Boolean, default=False)
+    is_published = db.Column(db.Boolean, default=False)
 
     folder = db.relationship('Folder', backref='files')
     versions = db.relationship('FileVersion', backref='file', lazy=True, order_by='FileVersion.version_number.desc()', cascade='all, delete-orphan')

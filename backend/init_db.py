@@ -1,4 +1,6 @@
-from .models import User
+import os
+from .config import Config
+from .models import User, Folder
 
 def create_test_user(app, db):
     with app.app_context():
@@ -50,6 +52,12 @@ def create_admin_and_test_users(app, db):
             new_user.set_password('test')  # Set a secure password
             db.session.add(new_user)
             db.session.commit()
+
+            root_folder = Folder(name='Root folder', owner_id=new_user.id, parent_id=None)
+            db.session.add(root_folder)
+            db.session.commit()
+
+            os.makedirs(os.path.join(Config.UPLOAD_FOLDER, 'testuser'), exist_ok=True)
             print("Test user created.")
         else:
             print("Test user already exists.")

@@ -14,12 +14,19 @@
           <span class="icon">🏠</span> Home (Files & Folders)
         </button>
         <button 
+          :class="['nav-button', { active: activeView === 'public' }]" 
+          @click="setActiveView('public'); loadPublicFiles()"
+        >
+          <span class="icon">🌐</span> Public (Published Files)
+        </button>
+        <button 
           :class="['nav-button', { active: activeView === 'upload' }]" 
           @click="setActiveView('upload')"
         >
           <span class="icon">📤</span> Upload File
         </button>
         <button 
+          v-if="!isAdmin"
           :class="['nav-button', { active: activeView === 'createFolder' }]" 
           @click="setActiveView('createFolder')"
         >
@@ -55,7 +62,7 @@
             @change="onFileChange"
           />
           <label for="filePick" class="file-input" v-if ="!selectedFile">
-            📂 選擇檔案或拖放到此
+            📂 選擇檔案
           </label>
           <label for="filePick" class="file-input" v-else>
             {{ selectedFile.name }}
@@ -126,6 +133,14 @@
         />
       </section>
 
+      <section v-if="activeView === 'public'" class="folder-section content-section">
+        <h2>Public Files</h2>
+        <PublicFolderTree
+          :publicFiles="publicFiles"
+          @refresh-tree="loadPublicFiles"
+        />
+      </section>
+
       <!-- Success/Error Messages -->
       <div v-if="successMessage" class="alert success app-message">
         ✅ {{ successMessage }}
@@ -145,6 +160,7 @@ import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { sessionCache, setSession, startSessionMonitoring, stopSessionMonitoring } from '@/router'
 import FolderTree from '@/components/FolderTree.vue'
+import PublicFolderTree from '@/components/PublicFolderTree.vue'
 
 const router = useRouter()
 
@@ -160,6 +176,7 @@ const errorMessage   = ref('')
 const successMessage = ref('')
 const loading        = ref(false)
 const isAdmin        = ref(false)
+const publicFiles = ref([]) // For public files if needed
 
 /* ----------------------------------------------------------- view control */
 function setActiveView(viewName) {
@@ -240,6 +257,22 @@ async function loadFolders () {
   } catch (err) { handleErr(err) } finally { loading.value = false }
 }
 
+async function loadPublicFiles () {
+  loading.value = true
+  try {
+    const { data } = await axios.get('/public-files', { withCredentials:true })
+    
+    // Handle new API response structure
+    if (data.pfiles) {
+      const root = Array.isArray(data.pfiles) ? data.pfiles : [data.pfiles]
+      publicFiles.value = root
+      console.log('Public files number:', publicFiles.value.length)
+    } else {
+      publicFiles.value = []
+    }
+  } catch (err) { handleErr(err) } finally { loading.value = false }
+}
+
 /* -------------------------------------------------------------- actions */
 async function upload () {
   if (!selectedFile.value) return
@@ -296,6 +329,7 @@ async function deleteFolder(id) {
     await axios.delete(`/folders/${id}`, { withCredentials: true })
     successMessage.value = 'Folder deleted successfully!'
     await loadFolders()
+    await loadPublicFiles() // Refresh public files if needed
     
   } catch (err) {
     console.error('Delete folder error:', err)
@@ -312,6 +346,7 @@ async function deleteFile(id) {
     await axios.delete(`/delete/${id}`, { withCredentials: true })
     successMessage.value = 'File deleted successfully!'
     await loadFolders()
+    await loadPublicFiles() // Refresh public files if needed
     
   } catch (err) {
     console.error('Delete file error:', err)
@@ -380,6 +415,7 @@ watch(errorMessage, (newVal) => {
 onMounted(() => {
   console.log('Files component mounted')
   loadFolders()
+  loadPublicFiles() // Load public files if needed
   checkAdminStatus() // Check if user is admin
   // Set initial view, perhaps from query param or local storage in future
   setActiveView('home')

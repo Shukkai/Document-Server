@@ -290,6 +290,7 @@ def get_folders():
                     "mimetype": f.mimetype,
                     "uploaded_at": f.uploaded_at.isoformat(),
                     "is_under_review": f.is_under_review,
+                    "is_published": f.is_published,
                     "active_review": {
                         "id": f.get_active_review().id,
                         "reviewer": f.get_active_review().reviewer.username,
@@ -322,6 +323,34 @@ def get_folders():
     return jsonify({
         "tree": folder_tree,
         "flat": flat_folders
+    })
+
+# ────────────── Get Public Files ────────────────────────────────────────
+@app.route('/public-files', methods=['GET'])
+@login_required
+def get_all_public_files():
+    all_publics = File.query.filter_by(is_published=True).all()
+
+    files_data = []
+    for file in all_publics:
+        files_data.append({
+            "id": file.id,
+            "name": file.filename,
+            "mimetype": file.mimetype,
+            "path": file.path,
+            "uploaded_at": file.uploaded_at.isoformat(),
+            "is_under_review": file.is_under_review,
+            "is_published": file.is_published,
+            "current_version": file.current_version,
+            # "active_review": {
+            #     "id": file.get_active_review().id if file.get_active_review() else None,
+            #     "reviewer": file.get_active_review().reviewer.username if file.get_active_review() else None,
+            #     "requested_at": file.get_active_review().requested_at.isoformat() if file.get_active_review() else None
+            # }
+        })
+
+    return jsonify({
+        "pfiles": files_data,
     })
 
 # ────────────── Create / Delete folder ───────────────────────────────────
@@ -514,6 +543,8 @@ def save_file_content(file_id):
         # 4. Update file record metadata
         file.current_version = next_version_number
         file.updated_at = datetime.utcnow()
+
+        file.is_published = False  # Reset publish status on edit
         
         db.session.commit()
         
@@ -825,6 +856,7 @@ def submit_review(review_id):
         
         # Update file status
         review.file.is_under_review = False
+        review.file.is_published = True
         
         # Create notification for requester
         notification = Notification(
@@ -861,6 +893,7 @@ def cancel_review(file_id):
         
         # Update file status
         file.is_under_review = False
+        file.is_published = False
         
         # Create notification for reviewer
         notification = Notification(
@@ -1391,6 +1424,7 @@ def admin_get_user_files(target_user_id):
                     "mimetype": f.mimetype,
                     "uploaded_at": f.uploaded_at.isoformat(),
                     "is_under_review": f.is_under_review,
+                    "is_published": f.is_published,
                     "current_version": f.current_version, # Add current_version for admin view
                     "owner_id": f.owner_id, # Explicitly include owner_id
                     "active_review": {
