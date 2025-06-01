@@ -15,10 +15,9 @@
 
       <button type="submit">Login</button>
 
-      <button
-        type="button"
-        @click="loginWithGoogle"
-      >使用 Google 進行登入</button>
+      <button type="button" @click="loginWithGoogle">
+        Sign in with Google
+      </button>
 
       <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
     </form>
