@@ -49,7 +49,7 @@ services:
       - FLASK_APP=app.py
       - PYTHONPATH=/app/backend
     command: >
-      sh -c "flask run --host=0.0.0.0 --port=5001"
+      sh -c "flask run --host=0.0.0.0 --port=5001 --with-threads"
     depends_on:
       mysql:
         condition: service_healthy
@@ -61,6 +61,29 @@ services:
       - "8080:80"
     depends_on:
       - backend
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:v2.53.4
+    volumes:
+      - ./prometheus/config.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+
+  grafana:
+    container_name: grafana
+    image: grafana/grafana:11.5.5
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/config.ini:/etc/grafana/grafana.ini
+      - ./grafana/datasource.yaml:/etc/grafana/provisioning/datasources/default.yaml
+      - ./grafana/dashboard.yaml:/etc/grafana/provisioning/dashboards/default.yaml
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
 
 volumes:
   mysql_data:

@@ -16,6 +16,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 from authlib.integrations.flask_client import OAuth
+from prometheus_flask_exporter import PrometheusMetrics
 
 from .models import (
     db, File, Folder, User, FileVersion,
@@ -30,6 +31,8 @@ from .init_db import create_test_user, create_admin_and_test_users
 app = Flask(__name__)
 app.config.from_object(Config)
 db.init_app(app)
+
+metrics = PrometheusMetrics(app)  # 啟用自動監控所有 endpoint
 
 login_manager               = LoginManager()
 login_manager.login_view    = None          #   ↳ return JSON, no 302
