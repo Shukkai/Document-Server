@@ -192,7 +192,7 @@ def upload_file():
 @login_required
 def download_file(file_id):
     rec = File.query.get_or_404(file_id)
-    if rec.owner_id != current_user.id and not current_user.is_admin:
+    if rec.is_published == False and rec.owner_id != current_user.id and not current_user.is_admin:
         return {"error": "Access denied"}, 403
     return send_from_directory(os.path.dirname(rec.path),
                                os.path.basename(rec.path))
