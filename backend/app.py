@@ -1462,31 +1462,31 @@ def admin_get_user_files(target_user_id):
     })
 
 # ────────────── Bootstrapping ────────────────────────────────────────────
-def create_default_test_user():
-    """Create a default test user if it doesn't exist"""
-    existing_user = User.query.filter_by(username='test').first()
-    if not existing_user:
-        test_user = User(username='test', email='test@example.com')
-        test_user.set_password('test')
-        db.session.add(test_user)
-        db.session.flush()  # Get the user ID
+# def create_default_test_user():
+#     """Create a default test user if it doesn't exist"""
+#     existing_user = User.query.filter_by(username='test').first()
+#     if not existing_user:
+#         test_user = User(username='test', email='test@example.com')
+#         test_user.set_password('test')
+#         db.session.add(test_user)
+#         db.session.flush()  # Get the user ID
         
-        # Create root folder for test user
-        root_folder = Folder(name='Root folder', owner_id=test_user.id, parent_id=None)
-        db.session.add(root_folder)
-        db.session.commit()
+#         # Create root folder for test user
+#         root_folder = Folder(name='Root folder', owner_id=test_user.id, parent_id=None)
+#         db.session.add(root_folder)
+#         db.session.commit()
         
-        # Create user directory on disk
-        user_dir = os.path.join(Config.UPLOAD_FOLDER, 'test')
-        os.makedirs(user_dir, exist_ok=True)
+#         # Create user directory on disk
+#         user_dir = os.path.join(Config.UPLOAD_FOLDER, 'test')
+#         os.makedirs(user_dir, exist_ok=True)
         
-        # Create version directory for the user
-        version_dir = os.path.join(user_dir, '.version')
-        os.makedirs(version_dir, exist_ok=True)
+#         # Create version directory for the user
+#         version_dir = os.path.join(user_dir, '.version')
+#         os.makedirs(version_dir, exist_ok=True)
         
-        print("✅ Created default test user (username: test, password: test)")
-    else:
-        print("ℹ️  Test user already exists")
+#         print("✅ Created default test user (username: test, password: test)")
+#     else:
+#         print("ℹ️  Test user already exists")
 
 
 @app.route('/auth/google/login')
@@ -1501,7 +1501,7 @@ def google_login():
 
 
 @app.route('/auth/google/callback')
-def google_callback():
+def google_callback():  # pragma: no cover
     """Handle Google OAuth callback"""
     google = oauth.create_client('google')  # Create a Google OAuth client
     token = google.authorize_access_token()
@@ -1537,7 +1537,7 @@ def google_callback():
 
     return redirect(f"{FRONTEND_ROOT}/oauth2/success")
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
     app.secret_key = os.getenv("SECRET_KEY", "dev-secret")
 
@@ -1547,8 +1547,8 @@ if __name__ == '__main__':
                 db.create_all()
                 print("✅ tables:", inspect(db.engine).get_table_names())
                 
-                # Create default test user after tables are created
-                create_default_test_user()
+                # # Create default test user after tables are created
+                # create_default_test_user()
                 break
         except OperationalError:
             print("⏳ waiting for MySQL…"); time.sleep(3)

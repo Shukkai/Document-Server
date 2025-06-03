@@ -1,7 +1,7 @@
 from app import app, db
 from models import User, File, Folder
 
-def check_test_user():
+def check_test_user():  # pragma: no cover
     with app.app_context():
         # Find test user
         test_user = User.query.filter_by(username='test').first()
@@ -23,5 +23,5 @@ def check_test_user():
         for file in files:
             print(f"  - {file.filename} (ID: {file.id}, Folder: {file.folder_id})")
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     check_test_user() 

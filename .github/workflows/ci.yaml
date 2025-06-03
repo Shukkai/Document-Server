@@ -18,6 +18,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install beautifulsoup4
         working-directory: ./backend
 
       - name: Run tests with coverage
@@ -33,28 +34,50 @@ jobs:
           path: ./backend/htmlcov
 
       - name: Add coverage summary to Actions run
-        if: always()                       # still runs even if tests fail
+        if: always()
         run: |
           python - <<'PY'
-          import os, xml.etree.ElementTree as ET, textwrap, sys, pathlib
-          xml_path = pathlib.Path("backend/coverage.xml")
-          if not xml_path.exists():
-              print("No coverage.xml, nothing to summarise"); sys.exit(0)
+          import os, sys, pathlib, textwrap
+          from bs4 import BeautifulSoup
 
-          root = ET.parse(xml_path).getroot()
-          line_rate   = float(root.attrib["line-rate"])   * 100
-          branch_rate = float(root.attrib.get("branch-rate", 0)) * 100
+          html_path = pathlib.Path("backend/htmlcov/index.html")
+          if not html_path.exists():
+              print("No HTML coverage report found, skipping summary.")
+              sys.exit(0)
 
-          summary_md = textwrap.dedent(f"""\
-              ### 🧪 Coverage Summary
+          with open(html_path, encoding='utf-8') as f:
+              soup = BeautifulSoup(f, "html.parser")
 
-              | Metric  | Percent |
-              | ------- | ------- |
-              | Line    | **{line_rate:.2f}%** |
-              | Branch  | {branch_rate:.2f}% |
+          table = soup.find("table", class_="index")
+          if not table:
+              print("Coverage table not found.")
+              sys.exit(1)
 
-              _Full HTML report available in the “Artifacts” section (html-coverage)._  
-              """)
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+          rows = table.find_all("tr")[1:]  # skip header
+          file_coverage_data = []
+
+          for row in rows:
+              cols = row.find_all("td")
+              if len(cols) < 5:
+                  continue
+              file_name = cols[0].text.strip()
+              coverage = cols[4].text.strip()
+              file_coverage_data.append((file_name, coverage))
+
+          total = next((row for row in file_coverage_data if row[0].lower() == "total"), None)
+          file_coverage_data = [row for row in file_coverage_data if row[0].lower() != "total"]
+
+          summary_md = "### 🧪 Coverage per File\n\n"
+          summary_md += "| File | Coverage |\n"
+          summary_md += "|------|----------|\n"
+          for file_name, cov in file_coverage_data:
+              summary_md += f"| {file_name} | {cov} |\n"
+
+          if total:
+              summary_md += f"\n**Total Coverage:** **{total[1]}**\n\n"
+
+          summary_md += "_Full HTML report available in the “Artifacts” section (html-coverage)._"
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
               fh.write(summary_md)
           PY

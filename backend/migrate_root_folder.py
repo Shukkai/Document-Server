@@ -2,19 +2,18 @@
 """
 Migration script to rename root folders from username to "Root folder"
 """
-import os
-import sys
+
 from flask import Flask
 from models import db, Folder, User
 from config import Config
 
-def create_app():
+def create_app():   # pragma: no cover
     app = Flask(__name__)
     app.config.from_object(Config)
     db.init_app(app)
     return app
 
-def migrate_root_folders():
+def migrate_root_folders(): # pragma: no cover
     """Update all root folders to be named 'Root folder' instead of username"""
     app = create_app()
     
@@ -36,5 +35,5 @@ def migrate_root_folders():
         else:
             print("ℹ️  No root folders needed updating")
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     migrate_root_folders() 

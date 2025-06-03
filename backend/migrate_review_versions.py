@@ -4,9 +4,8 @@ Migration script to add version tracking fields to DocumentReview table
 """
 
 from app import app, db
-from models import DocumentReview
 
-def migrate_review_versions():
+def migrate_review_versions():  # pragma: no cover
     """Add version tracking fields to DocumentReview table"""
     with app.app_context():
         try:
@@ -30,5 +29,5 @@ def migrate_review_versions():
     
     return True
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     migrate_review_versions() 

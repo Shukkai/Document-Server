@@ -2,7 +2,7 @@ import os
 from .config import Config
 from .models import User, Folder
 
-def create_test_user(app, db):
+def create_test_user(app, db):  # pragma: no cover
     with app.app_context():
         db.create_all()  # Create tables if they don't exist
 

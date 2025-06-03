@@ -66,6 +66,10 @@ def test_admin_version_flow(client, app):
     assert rv.status_code == 200
     assert rv.get_json()["new_version_number"] == 3
 
+    # download v3
+    rv = client.get(f"/download-version/{fid}/3")
+    assert rv.status_code == 200
+
     # cleanup (retain only newest)
     rv = client.post(f"/cleanup-versions/{fid}")
     assert rv.status_code == 200
