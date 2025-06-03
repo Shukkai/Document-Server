@@ -1493,10 +1493,21 @@ def admin_get_user_files(target_user_id):
 def google_login():
     """Redirect to Google OAuth login"""
     redirect_uri = url_for('google_callback', _external=True)
-    if "localhost:5001" not in redirect_uri:
+    
+    global FRONTEND_ROOT
+
+    if "localhost" in redirect_uri and "localhost:5001" not in redirect_uri:
         localhost_name = redirect_uri.split("://")[1].split("/")[0]
         redirect_uri = redirect_uri.replace(localhost_name, "localhost:5001")
-        # redirect_uri = redirect_uri.replace("localhost", "localhost:5001")
+
+        FRONTEND_ROOT = "http://localhost:8080"
+
+    elif "127.0.0.1" in redirect_uri and "127.0.0.1:5001" not in redirect_uri:
+        localhost_name = redirect_uri.split("://")[1].split("/")[0]
+        redirect_uri = redirect_uri.replace(localhost_name, "127.0.0.1:5001")
+    
+        FRONTEND_ROOT = "http://127.0.0.1:8080"
+
     return google.authorize_redirect(redirect_uri)
 
 
