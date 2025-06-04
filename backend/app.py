@@ -1498,7 +1498,7 @@ def google_login():
     global FRONTEND_ROOT
     global FRONTEND_PORT
 
-    if FRONTEND_PORT == 80:
+    if FRONTEND_PORT == 80 or FRONTEND_PORT == "80":
         if "localhost" in redirect_uri:
             FRONTEND_ROOT = f"http://localhost"
 
