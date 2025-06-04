@@ -1494,8 +1494,9 @@ def admin_get_user_files(target_user_id):
 def google_login():
     """Redirect to Google OAuth login"""
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", url_for('google_callback', _external=True))
-    
+
     global FRONTEND_ROOT
+    global FRONTEND_PORT
 
     if FRONTEND_PORT == 80:
         if "localhost" in redirect_uri:
