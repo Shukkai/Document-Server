@@ -1493,7 +1493,7 @@ def admin_get_user_files(target_user_id):
 @app.route('/auth/google/login')
 def google_login():
     """Redirect to Google OAuth login"""
-    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", url_for('google_callback', _external=True))
+    redirect_uri = url_for('google_callback', _external=True)
 
     global FRONTEND_ROOT
     global FRONTEND_PORT
@@ -1504,6 +1504,8 @@ def google_login():
 
         elif "127.0.0.1" in redirect_uri:
             FRONTEND_ROOT = f"http://127.0.0.1"
+
+        redirect_uri = "http://localhost/api/auth/google/callback"
 
         return google.authorize_redirect(redirect_uri)
 
