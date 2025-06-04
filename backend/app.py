@@ -45,7 +45,8 @@ create_admin_and_test_users(app, db)
 load_dotenv()
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "your-google-client-id")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "your-google-client-secret")
-FRONTEND_ROOT = os.getenv("FRONTEND_ROOT", "http://localhost:8080")
+FRONTEND_PORT = os.getenv("FRONTEND_PORT", "8080")
+FRONTEND_ROOT = f"http://localhost:{FRONTEND_PORT}" if FRONTEND_PORT else "http://localhost:8080"
 
 oauth = OAuth(app)
 google = oauth.register(
@@ -1492,21 +1493,30 @@ def admin_get_user_files(target_user_id):
 @app.route('/auth/google/login')
 def google_login():
     """Redirect to Google OAuth login"""
-    redirect_uri = url_for('google_callback', _external=True)
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", url_for('google_callback', _external=True))
     
     global FRONTEND_ROOT
+
+    if FRONTEND_PORT == 80:
+        if "localhost" in redirect_uri:
+            FRONTEND_ROOT = f"http://localhost"
+
+        elif "127.0.0.1" in redirect_uri:
+            FRONTEND_ROOT = f"http://127.0.0.1"
+
+        return google.authorize_redirect(redirect_uri)
 
     if "localhost" in redirect_uri and "localhost:5001" not in redirect_uri:
         localhost_name = redirect_uri.split("://")[1].split("/")[0]
         redirect_uri = redirect_uri.replace(localhost_name, "localhost:5001")
 
-        FRONTEND_ROOT = "http://localhost:8080"
+        FRONTEND_ROOT = f"http://localhost:{FRONTEND_PORT}"
 
     elif "127.0.0.1" in redirect_uri and "127.0.0.1:5001" not in redirect_uri:
         localhost_name = redirect_uri.split("://")[1].split("/")[0]
         redirect_uri = redirect_uri.replace(localhost_name, "127.0.0.1:5001")
     
-        FRONTEND_ROOT = "http://127.0.0.1:8080"
+        FRONTEND_ROOT = f"http://127.0.0.1:{FRONTEND_PORT}"
 
     return google.authorize_redirect(redirect_uri)
 
