@@ -1,0 +1,223 @@
+# ----------------------------- #
+# Persistent storage for MySQL  #
+# ----------------------------- #
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+# ----------------------------- #
+# StatefulSet: MySQL 8          #
+# ----------------------------- #
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels: { app: mysql }
+  template:
+    metadata:
+      labels: { app: mysql }
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8
+        ports:
+          - containerPort: 3306
+        env:
+          - name: MYSQL_ROOT_PASSWORD
+            value: "root"
+          - name: MYSQL_DATABASE
+            value: cloud_docs
+          - name: MYSQL_USER
+            value: flaskuser
+          - name: MYSQL_PASSWORD
+            value: flaskpass
+        livenessProbe:  # docker-compose health-check replicated here
+          exec: { command: ["mysqladmin","ping","-h","localhost"] }
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        volumeMounts:
+          - name: data
+            mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+---
+# ----------------------------- #
+# Deployment: Backend (Flask)   #
+# ----------------------------- #
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: backend }
+  template:
+    metadata:
+      labels: { app: backend }
+    spec:
+      initContainers:
+      - name: wait-mysql
+        image: alpine
+        command: ["sh","-c","until nc -z mysql 3306; do echo waiting for mysql; sleep 2; done"]
+      containers:
+      - name: backend
+        image: ghcr.io/shukkai/doc-backend:latest
+        ports:
+          - containerPort: 5001
+        env:
+          - name: DATABASE_URL
+            value: mysql+pymysql://flaskuser:flaskpass@mysql/cloud_docs
+          - name: SECRET_KEY
+            value: dev-key
+          - name: FLASK_APP
+            value: app.py
+          - name: PYTHONPATH
+            value: /app/backend
+        command:
+          ["flask","run","--host=0.0.0.0","--port=5001","--with-threads"]
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5001
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+# ----------------------------- #
+# Deployment: Front-end (Vue)   #
+# ----------------------------- #
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: frontend }
+  template:
+    metadata:
+      labels: { app: frontend }
+    spec:
+      containers:
+      - name: frontend
+        image: ghcr.io/shukkai/doc-backend-frontend:latest
+        ports:
+          - containerPort: 80
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+# ----------------------------- #
+# Deployment: phpMyAdmin        #
+# ----------------------------- #
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phpmyadmin
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: phpmyadmin }
+  template:
+    metadata:
+      labels: { app: phpmyadmin }
+    spec:
+      containers:
+      - name: phpmyadmin
+        image: phpmyadmin/phpmyadmin
+        ports:
+          - containerPort: 80
+        env:
+          - { name: PMA_HOST, value: mysql }
+          - { name: PMA_PORT, value: "3306" }
+          - { name: PMA_USER, value: root }
+          - { name: PMA_PASSWORD, value: root }
+          - { name: MYSQL_ROOT_PASSWORD, value: root }
+        readinessProbe:
+          httpGet: { path: /, port: 80 }
+          initialDelaySeconds: 5
+---
+# ----------------------------- #
+# ConfigMaps: Prometheus/Grafana#
+# (created by kubectl beforehand)
+# ----------------------------- #
+# kubectl create configmap prometheus-config --from-file=../prometheus/config.yml
+# kubectl create configmap grafana-datasource --from-file=../grafana/datasource.yaml
+# kubectl create configmap grafana-dashboard  --from-file=../grafana/dashboard.yaml --from-file=../grafana/dashboards/
+# These placeholders show how they're mounted:
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: prometheus }
+  template:
+    metadata:
+      labels: { app: prometheus }
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.53.4
+        ports:
+          - containerPort: 9090
+        volumeMounts:
+          - name: config
+            mountPath: /etc/prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: grafana }
+  template:
+    metadata:
+      labels: { app: grafana }
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:11.5.5
+        ports:
+          - containerPort: 3000
+        volumeMounts:
+          - name: grafana-datasource
+            mountPath: /etc/grafana/provisioning/datasources
+          - name: grafana-dashboard
+            mountPath: /etc/grafana/provisioning/dashboards
+          - name: grafana-dash-files
+            mountPath: /var/lib/grafana/dashboards
+      volumes:
+        - name: grafana-datasource
+          configMap: { name: grafana-datasource }
+        - name: grafana-dashboard
+          configMap: { name: grafana-dashboard }
+        - name: grafana-dash-files
+          emptyDir: {}   # dashboards copied from ConfigMap at start-up script if required
