@@ -25,7 +25,7 @@
 | Auth         | Session-based login, Google OAuth    |
 | Monitoring   | Prometheus, Grafana                  |
 | CI/CD        | GitHub Actions                       |
-| Deployment   | Docker, Docker Compose   |
+| Deployment   | Docker, Docker Compose, Kubernetes   |
 
 ## Features
 
@@ -84,31 +84,24 @@
 
 1. **(Optional)** To enable Google OAuth login, create a `.env` file in the `./backend` directory with the following content:
 
-```env
-GOOGLE_CLIENT_ID = "your-google-client-id"
-GOOGLE_CLIENT_SECRET = "your-google-client-secret"
+```bash
+cd ./backend
+cp .env.sample .env
 ```
 
 2. Build and start the services:
 
+- Docker:
 ```bash
 docker-compose up --build
 ```
 
+- k8s:
+```bash
+cd k8s
+./start_k8s.sh
+```
+
 3. Access the application:
-  - **Frontend**: [http://localhost:8080](http://localhost:8080)  
-  - **Backend API**: [http://localhost:5001](http://localhost:5001)  
-  - **phpMyAdmin**: [http://localhost:8081](http://localhost:8081)  
-    > Login with:  
-    > Host: `mysql`  
-    > Username: `root`  
-    > Password: `root`
-
-4. Monitoring with Prometheus & Grafana
-
-The stack includes basic observability for system metrics.
-
-- **Prometheus**: [http://localhost:9090](http://localhost:9090)  
-  > Scrapes metrics from the Flask backend (`http://localhost:5001/metrics`)
-
-- **Grafana**: [http://localhost:3000/d/_eX4mpl3](http://localhost:3000/d/_eX4mpl3)
+  - Docker: [http://localhost:8080](http://localhost:8080)
+  - k8s: [http://localhost](http://localhost)
