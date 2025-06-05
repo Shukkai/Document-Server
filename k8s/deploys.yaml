@@ -181,61 +181,69 @@ spec:
 # kubectl create configmap prometheus-config --from-file=../prometheus/config.yml
 # kubectl create configmap grafana-datasource --from-file=../grafana/datasource.yaml
 # kubectl create configmap grafana-dashboard  --from-file=../grafana/dashboard.yaml --from-file=../grafana/dashboards/
+# kubectl create configmap grafana-config --from-file=config.ini
 # These placeholders show how they're mounted:
-# ---
-# apiVersion: apps/v1
-# kind: Deployment
-# metadata:
-#   name: prometheus
-# spec:
-#   replicas: 1
-#   selector:
-#     matchLabels: { app: prometheus }
-#   template:
-#     metadata:
-#       labels: { app: prometheus }
-#     spec:
-#       containers:
-#       - name: prometheus
-#         image: prom/prometheus:v2.53.4
-#         ports:
-#           - containerPort: 9090
-#         volumeMounts:
-#           - name: config
-#             mountPath: /etc/prometheus
-#       volumes:
-#         - name: config
-#           configMap:
-#             name: prometheus-config
-# ---
-# apiVersion: apps/v1
-# kind: Deployment
-# metadata:
-#   name: grafana
-# spec:
-#   replicas: 1
-#   selector:
-#     matchLabels: { app: grafana }
-#   template:
-#     metadata:
-#       labels: { app: grafana }
-#     spec:
-#       containers:
-#       - name: grafana
-#         image: grafana/grafana:11.5.5
-#         ports:
-#           - containerPort: 3000
-#         volumeMounts:
-#           - name: grafana-datasource
-#             mountPath: /etc/grafana/provisioning/datasources
-#           - name: grafana-dashboard
-#             mountPath: /etc/grafana/provisioning/dashboards
-#           - name: grafana-dash-files
-#             mountPath: /var/lib/grafana/dashboards
-#       volumes:
-#         - name: grafana-datasource
-#           configMap: { name: grafana-datasource }
-#         - name: grafana-dashboard
-#           configMap: { name: grafana-dashboard }
-#         - name: grafana-dash-files
-#           emptyDir: {}   # dashboards copied from ConfigMap at start-up script if required
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: prometheus }
+  template:
+    metadata:
+      labels: { app: prometheus }
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.53.4
+        ports:
+          - containerPort: 9090
+        volumeMounts:
+          - name: config
+            mountPath: /etc/prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: grafana }
+  template:
+    metadata:
+      labels: { app: grafana }
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:11.5.5
+        ports:
+          - containerPort: 3000
+        volumeMounts:
+          - name: grafana-datasource
+            mountPath: /etc/grafana/provisioning/datasources
+          - name: grafana-dashboard
+            mountPath: /etc/grafana/provisioning/dashboards
+          - name: grafana-dash-files
+            mountPath: /var/lib/grafana/dashboards
+          - name: grafana-config
+            mountPath: /etc/grafana/grafana.ini
+            subPath: config.ini
+
+      volumes:
+        - name: grafana-datasource
+          configMap: { name: grafana-datasource }
+        - name: grafana-dashboard
+          configMap: { name: grafana-dashboard }
+        - name: grafana-dash-files
+          emptyDir: {}   # dashboards copied from ConfigMap at start-up script if required
+        - name: grafana-config
+          configMap:
+            name: grafana-config

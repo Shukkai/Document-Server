@@ -41,25 +41,25 @@ spec:
   ports:
     - port: 8081
       targetPort: 80
-# # ----------- Prometheus ----------------------------------
-# ---
-# apiVersion: v1
-# kind: Service
-# metadata:
-#   name: prometheus
-# spec:
-#   selector: { app: prometheus }
-#   ports:
-#     - port: 9090
-#       targetPort: 9090
-# # ----------- Grafana -------------------------------------
-# ---
-# apiVersion: v1
-# kind: Service
-# metadata:
-#   name: grafana
-# spec:
-#   selector: { app: grafana }
-#   ports:
-#     - port: 3000
-#       targetPort: 3000
+# ----------- Prometheus ----------------------------------
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+spec:
+  selector: { app: prometheus }
+  ports:
+    - port: 9090
+      targetPort: 9090
+# ----------- Grafana -------------------------------------
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+spec:
+  selector: { app: grafana }
+  ports:
+    - port: 3000
+      targetPort: 3000
