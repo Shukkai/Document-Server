@@ -45,7 +45,7 @@ create_admin_and_test_users(app, db)
 load_dotenv()
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "your-google-client-id")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "your-google-client-secret")
-FRONTEND_PORT = os.getenv("FRONTEND_PORT", "8080")
+FRONTEND_PORT = os.getenv("FRONTEND_PORT", 80)
 FRONTEND_ROOT = f"http://localhost:{FRONTEND_PORT}" if FRONTEND_PORT else "http://localhost:8080"
 
 oauth = OAuth(app)
@@ -1497,6 +1497,8 @@ def google_login():
 
     global FRONTEND_ROOT
     global FRONTEND_PORT
+    print(f"Redirect URI: {redirect_uri}")
+    print(f"Frontend Port: {FRONTEND_PORT}")
 
     if FRONTEND_PORT == 80 or FRONTEND_PORT == "80":
         if "localhost" in redirect_uri:
@@ -1506,10 +1508,11 @@ def google_login():
             FRONTEND_ROOT = f"http://127.0.0.1"
 
         redirect_uri = "http://localhost/api/auth/google/callback"
+        print(f"Redirect URI: {redirect_uri}")
 
         return google.authorize_redirect(redirect_uri)
 
-    if "localhost" in redirect_uri and "localhost:5001" not in redirect_uri:
+    elif "localhost" in redirect_uri and "localhost:5001" not in redirect_uri:
         localhost_name = redirect_uri.split("://")[1].split("/")[0]
         redirect_uri = redirect_uri.replace(localhost_name, "localhost:5001")
 
@@ -1565,18 +1568,18 @@ if __name__ == '__main__':  # pragma: no cover
     os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
     app.secret_key = os.getenv("SECRET_KEY", "dev-secret")
 
-    for i in range(10):
-        try:
-            with app.app_context():
-                db.create_all()
-                print("✅ tables:", inspect(db.engine).get_table_names())
+    # for i in range(10):
+    #     try:
+    #         with app.app_context():
+    #             db.create_all()
+    #             print("✅ tables:", inspect(db.engine).get_table_names())
                 
-                # # Create default test user after tables are created
-                # create_default_test_user()
-                break
-        except OperationalError:
-            print("⏳ waiting for MySQL…"); time.sleep(3)
-    else:
-        print("❌ DB not reachable"); exit(1)
+    #             # # Create default test user after tables are created
+    #             # create_default_test_user()
+    #             break
+    #     except OperationalError:
+    #         print("⏳ waiting for MySQL…"); time.sleep(3)
+    # else:
+    #     print("❌ DB not reachable"); exit(1)
 
-    app.run(host='0.0.0.0', port=5001)
+    app.run(host='0.0.0.0', port=80)
