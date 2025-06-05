@@ -96,9 +96,9 @@ spec:
           - name: PYTHONPATH
             value: /app/backend
           - name: GOOGLE_CLIENT_ID
-            value: "your-google-client-id"
+            value: "805978033938-m7otndcs1j21757dj88spjenaao99ev0.apps.googleusercontent.com"
           - name: GOOGLE_CLIENT_SECRET
-            value: "your-google-client-secret"
+            value: "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"
           - name: FRONTEND_PORT
             value: "80"
           - name: GOOGLE_REDIRECT_URI
@@ -233,9 +233,9 @@ spec:
             mountPath: /etc/grafana/provisioning/dashboards
           - name: grafana-dash-files
             mountPath: /var/lib/grafana/dashboards
-          - name: grafana-config
-            mountPath: /etc/grafana/grafana.ini
-            subPath: config.ini
+          # - name: grafana-config
+          #   mountPath: /etc/grafana/grafana.ini
+          #   subPath: config.ini
 
       volumes:
         - name: grafana-datasource
@@ -244,6 +244,6 @@ spec:
           configMap: { name: grafana-dashboard }
         - name: grafana-dash-files
           emptyDir: {}   # dashboards copied from ConfigMap at start-up script if required
-        - name: grafana-config
-          configMap:
-            name: grafana-config
+        # - name: grafana-config
+        #   configMap:
+        #     name: grafana-config
