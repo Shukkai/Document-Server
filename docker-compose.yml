@@ -48,6 +48,8 @@ services:
       - SECRET_KEY=dev-key
       - FLASK_APP=app.py
       - PYTHONPATH=/app/backend
+      - FRONTEND_PORT=8080
+      - FRONTEND_ROOT=http://localhost:8080
     command: >
       sh -c "flask run --host=0.0.0.0 --port=5001 --with-threads"
     depends_on:
@@ -61,6 +63,24 @@ services:
       - "8080:80"
     depends_on:
       - backend
+
+  cli:
+    build:
+      context: ./cli
+      dockerfile: Dockerfile
+    container_name: document-cli
+    volumes:
+      - .:/workspace
+      - ./cli:/app/cli
+    working_dir: /workspace
+    environment:
+      - DOCUMENT_SERVER_URL=http://backend:5001
+    depends_on:
+      - backend
+    stdin_open: true
+    tty: true
+    profiles:
+      - cli
 
   prometheus:
     container_name: prometheus

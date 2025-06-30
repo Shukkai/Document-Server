@@ -68,13 +68,13 @@
                   <div v-if="file.__showInfo && isPreviewable(file.mimetype)" class="file-preview">
                     <img
                       v-if="file.mimetype?.startsWith('image/')"
-                      :src="`${baseURL}/download/${file.id}`"
+                      :src="`${baseURL}/preview/${file.id}`"
                       :alt="file.name"
                       class="preview-image"
                     />
                     <div v-else class="pdf-preview">
                       <iframe
-                        :src="`${baseURL}/download/${file.id}`"
+                        :src="`${baseURL}/preview/${file.id}`"
                         :title="file.name"
                         class="preview-iframe"
                       ></iframe>

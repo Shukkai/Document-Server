@@ -30,12 +30,31 @@ def create_admin_and_test_users(app, db):
             new_admin.set_password('admin123')  # Set a secure password
             db.session.add(new_admin)
             db.session.commit()
+            
+            # Create root folder for admin user
+            root_folder = Folder(name='Root folder', owner_id=new_admin.id, parent_id=None)
+            db.session.add(root_folder)
+            db.session.commit()
+            
+            os.makedirs(os.path.join(Config.UPLOAD_FOLDER, 'admin'), exist_ok=True)
             print("Admin user created successfully!")
             print("Username: admin")
             print("Password: admin123")
         else:
             print("Admin user already exists.")
             
+            # Check if admin has a root folder, create if missing
+            admin_root_folder = Folder.query.filter_by(owner_id=admin_user.id, parent_id=None).first()
+            if not admin_root_folder:
+                print("Creating root folder for admin user...")
+                root_folder = Folder(name='Root folder', owner_id=admin_user.id, parent_id=None)
+                db.session.add(root_folder)
+                db.session.commit()
+                os.makedirs(os.path.join(Config.UPLOAD_FOLDER, 'admin'), exist_ok=True)
+                print("Root folder created for admin user!")
+            else:
+                print("Admin user already has a root folder.")
+
         # # Also check if we need to upgrade testuser to admin
         # test_user = User.query.filter_by(username='testuser').first()
         # if test_user and not test_user.is_admin:

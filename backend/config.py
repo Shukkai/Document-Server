@@ -3,7 +3,7 @@ import os
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key')
     
-    UPLOAD_FOLDER = 'uploads'                          # Root uploads dir
+    UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')  # Absolute path for Docker
     USER_ROOT_FOLDER = os.path.join(UPLOAD_FOLDER, 'users')  # /uploads/users/{user_id}/...
 
     MAX_CONTENT_LENGTH = 25 * 1024 * 1024  # 25 MB per upload
@@ -13,7 +13,7 @@ class Config:
 
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "DATABASE_URL",
-        "mysql+pymysql://flaskuser:flaskpass@host.docker.internal/cloud_docs"
+        "mysql+pymysql://flaskuser:flaskpass@mysql/cloud_docs"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
@@ -23,4 +23,3 @@ class Config:
     SESSION_COOKIE_SECURE = False
     SESSION_COOKIE_HTTPONLY = True
     PERMANENT_SESSION_LIFETIME = 3600  # 1 hour
-    SESSION_TYPE = 'filesystem'  # Store sessions on filesystem instead of cookies

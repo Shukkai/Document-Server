@@ -19,3 +19,7 @@ client_secret_*.json
 .coverage
 *.xml
 htmlcov/
+
+# CLI session files
+cli/sessions/*.session
+cli/.session_*

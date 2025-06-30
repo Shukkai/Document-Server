@@ -15,7 +15,9 @@ WORKDIR /app/backend
 ENV PYTHONPATH=/app/backend
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
+ENV PORT=5001
 
 EXPOSE 5001
 
+# Default command runs the Flask app
 CMD ["python", "app.py"]
