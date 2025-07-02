@@ -13,6 +13,7 @@ import os
 from .models import db, User
 from .config import Config
 from .init_db import create_admin_and_test_users
+from .redis_config import init_redis
 
 def create_app(config_class=Config):
     """Application factory pattern for Flask app creation."""
@@ -25,6 +26,9 @@ def create_app(config_class=Config):
     
     # Initialize extensions
     db.init_app(app)
+    
+    # Initialize Redis
+    init_redis(app)
     
     # Initialize monitoring
     metrics = PrometheusMetrics(app)
@@ -89,13 +93,14 @@ def create_app(config_class=Config):
     
     # Register blueprints
     try:
-        from .routes import auth, files, folders, reviews, admin, oauth_routes
+        from .routes import auth, files, folders, reviews, admin, oauth_routes, redis_routes
         app.register_blueprint(auth.bp)
         app.register_blueprint(files.bp)
         app.register_blueprint(folders.bp)
         app.register_blueprint(reviews.bp)
         app.register_blueprint(admin.bp)
         app.register_blueprint(oauth_routes.bp)
+        app.register_blueprint(redis_routes.bp)
     except Exception as e:
         app.logger.error(f"Error registering blueprints: {e}")
         raise

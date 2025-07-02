@@ -19,6 +19,20 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     container_name: phpmyadmin
@@ -45,6 +59,7 @@ services:
       - "5001:5001"
     environment:
       - DATABASE_URL=mysql+pymysql://flaskuser:flaskpass@mysql/cloud_docs
+      - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=dev-key
       - FLASK_APP=app.py
       - PYTHONPATH=/app/backend
@@ -54,6 +69,8 @@ services:
       sh -c "flask run --host=0.0.0.0 --port=5001 --with-threads"
     depends_on:
       mysql:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   frontend:
@@ -107,3 +124,4 @@ services:
 
 volumes:
   mysql_data:
+  redis_data:

@@ -9,12 +9,14 @@ import shutil
 
 from ..models import db, File, Folder
 from ..utils.file_utils import folder_disk_path
+from ..utils.cache import cache, invalidate_cache, CacheManager
 
 bp = Blueprint('folders', __name__)
 
 
 @bp.route('/folders', methods=['GET'])
 @login_required
+@cache(expire=60, key_prefix="folders")  # Cache for 1 minute
 def get_folders():
     def ser(folder: Folder):
         return {
@@ -64,6 +66,7 @@ def get_folders():
 
 @bp.route('/public-files', methods=['GET'])
 @login_required
+@cache(expire=300, key_prefix="public_files")  # Cache for 5 minutes
 def get_all_public_files():
     all_publics = File.query.filter_by(is_published=True).all()
 
@@ -92,6 +95,7 @@ def get_all_public_files():
 
 @bp.route('/folders', methods=['POST'])
 @login_required
+@invalidate_cache(pattern="folders:*")  # Invalidate folder cache when creating new folder
 def create_folder():
     data      = request.json or {}
     name      = data.get('name', '').strip()
@@ -123,6 +127,7 @@ def create_folder():
 
 @bp.route('/folders/<int:fid>', methods=['DELETE'])
 @login_required
+@invalidate_cache(pattern="folders:*")  # Invalidate folder cache when deleting folder
 def delete_folder(fid):
     fld = Folder.query.get_or_404(fid)
     if fld.owner_id != current_user.id:
@@ -135,6 +140,7 @@ def delete_folder(fid):
 
 @bp.route('/move-file', methods=['POST'])
 @login_required
+@invalidate_cache(pattern="folders:*")  # Invalidate folder cache when moving files
 def move_file():
     """
     JSON body:

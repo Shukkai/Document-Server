@@ -92,8 +92,16 @@ def main():
     # Interactive mode
     while True:
         try:
+            # Get current user info for prompt
+            user_info = client.get_current_user()
+            if user_info:
+                username = user_info['username']
+                console.print(f"\n[bold blue]doccli[/bold blue] ([green]{username}[/green])> ", end="")
+            else:
+                console.print(f"\n[bold blue]doccli[/bold blue] ([yellow]not logged in[/yellow])> ", end="")
+            
             # Get command input
-            command = input(f"\n[bold blue]doccli[/bold blue] ({client.session_id})> ").strip()
+            command = input().strip()
             
             if not command:
                 continue

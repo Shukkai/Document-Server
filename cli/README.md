@@ -11,6 +11,26 @@ A command-line interface for the Document Server platform with **terminal-based 
 - **File Operations**: Upload, download, list, and delete files
 - **User Management**: Register new accounts and manage authentication
 
+## Redis Integration (Backend Caching)
+
+The backend now uses **Redis** for caching to speed up both frontend and CLI responses.
+
+- Frequently accessed data (like folders and public files) is cached in Redis.
+- When the frontend or CLI requests this data, the backend serves it instantly from Redis if available.
+- Cache is automatically invalidated when data changes (e.g., folder creation, file move).
+- This reduces database load and makes the platform more scalable and responsive.
+
+**How it works:**
+- Endpoints like `/folders` and `/public-files` are cached for fast repeated access.
+- You can add caching to more endpoints using the `@cache` decorator in the backend.
+- Redis health and cache management endpoints are available at `/redis/health` and `/redis/cache/*` (admin only).
+
+**To test Redis:**
+- Use the included `redis-cli.py` tool: `python redis-cli.py`
+- Or check health: `curl http://localhost:5001/redis/health`
+
+Redis is started automatically with Docker Compose. No manual setup is needed.
+
 ## Installation
 
 ### Option 1: Native Installation (Recommended)
