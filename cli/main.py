@@ -26,8 +26,8 @@ def signal_handler(signum, frame):
     console.print("\n[yellow]Received termination signal. Cleaning up...[/yellow]")
     # Reset current directory to root
     if 'client' in globals():
-        client.current_folder_id = None
-        client.current_folder_name = None
+        client.folder_manager.current_folder_id = None
+        client.folder_manager.current_folder_name = None
         console.print("[blue]Current directory reset to root[/blue]")
     sys.exit(0)
 
@@ -236,8 +236,8 @@ def main():
                 
             elif cmd in ['exit', 'quit']:
                 # Reset current directory to root before exiting
-                client.current_folder_id = None
-                client.current_folder_name = None
+                client.folder_manager.current_folder_id = None
+                client.folder_manager.current_folder_name = None
                 console.print("[blue]Current directory reset to root[/blue]")
                 console.print("[green]Goodbye![/green]")
                 break
