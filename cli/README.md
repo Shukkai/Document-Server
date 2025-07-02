@@ -1,247 +1,190 @@
 # Document Server CLI
 
-A command-line interface for the Document Server platform with **terminal-based session management**.
+A powerful command-line interface with **terminal-based session management** and **directory navigation**.
 
 ## Key Features
 
-- **Terminal-based Sessions**: Each terminal window maintains its own independent session
-- **Multi-User Support**: Multiple users can be logged in simultaneously in different terminals
-- **Session Persistence**: Sessions are automatically saved and restored per terminal
-- **Rich Terminal UI**: Beautiful interface with progress indicators and colored output
-- **File Operations**: Upload, download, list, and delete files
-- **User Management**: Register new accounts and manage authentication
+- **Terminal-based Sessions**: Each terminal maintains its own independent session
+- **Directory Navigation**: `cd`, `pwd`, `ls` commands like traditional file systems
+- **Context-Aware Operations**: `upload`, `mkdir`, `delete` use current directory by default
+- **Folder Management**: Create, navigate, and manage folders
+- **Smart File Search**: Commands prioritize current directory, fall back to global search
+- **Rich Terminal UI**: Beautiful interface with colors, icons, and progress indicators
 
-## Redis Integration (Backend Caching)
+## Quick Start
 
-The backend now uses **Redis** for caching to speed up both frontend and CLI responses.
+### Native CLI (Recommended)
+```bash
+cd cli
+pip install -r requirements.txt
+python main.py
+```
 
-- Frequently accessed data (like folders and public files) is cached in Redis.
-- When the frontend or CLI requests this data, the backend serves it instantly from Redis if available.
-- Cache is automatically invalidated when data changes (e.g., folder creation, file move).
-- This reduces database load and makes the platform more scalable and responsive.
+### Docker CLI
+```bash
+./run-cli-docker.sh
+```
 
-**How it works:**
-- Endpoints like `/folders` and `/public-files` are cached for fast repeated access.
-- You can add caching to more endpoints using the `@cache` decorator in the backend.
-- Redis health and cache management endpoints are available at `/redis/health` and `/redis/cache/*` (admin only).
+## Commands
 
-**To test Redis:**
-- Use the included `redis-cli.py` tool: `python redis-cli.py`
-- Or check health: `curl http://localhost:5001/redis/health`
+### Authentication
+| Command | Description |
+|---------|-------------|
+| `login <username> <password>` | Login to the server |
+| `register <username> <email> <password> [grade]` | Register new account |
+| `logout` | Logout and clear session |
+| `status` | Show current login status |
 
-Redis is started automatically with Docker Compose. No manual setup is needed.
+### File Operations
+| Command | Description |
+|---------|-------------|
+| `list [folder_name]` | List all files or files in specific folder |
+| `ls [folder_name]` | List files and folders in specific folder (alias for list) |
+| `upload <file_path>` | Upload a file (to current directory by default) |
+| `download <filename> [output_path]` | Download a file by filename |
+| `delete <filename>` | Delete a file (from current directory by default) |
+
+### Folder Operations
+| Command | Description |
+|---------|-------------|
+| `mkdir <folder_name> [parent_id]` | Create a new folder (in current directory by default) |
+| `folders` | List all folders |
+| `rmdir <folder_name>` | Delete a folder by name |
+| `tree` | Show folder tree structure |
+| `cd <folder_name>` | Change current folder context |
+| `pwd` | Show current folder path |
+| `mv <filename> <folder_name>` | Move file to different folder |
+
+### Session Management
+| Command | Description |
+|---------|-------------|
+| `sessions` | List all terminal sessions |
+| `help` | Show help message |
+| `exit` | Exit the CLI |
+
+## Example Workflow
+
+```bash
+# Start interactive CLI
+doccli
+
+# Login and explore
+doccli (admin)> login admin admin123
+doccli (admin)> list
+doccli (admin)> tree
+
+# Create and navigate folders
+doccli (admin)> mkdir documents
+doccli (admin)> cd documents
+doccli (admin)> pwd
+Current directory: /documents
+
+# Upload files to current directory
+doccli (admin)> upload /path/to/report.pdf
+Uploading to current directory: documents
+File uploaded successfully!
+
+# List contents with folders
+doccli (admin)> ls
+Contents of current directory 'documents':
+  📁 projects/ (ID: 4)
+  📄 report.pdf - Available
+
+# Navigate and manage
+doccli (admin)> cd projects
+doccli (admin)> mkdir 2024
+doccli (admin)> mv report.pdf 2024/
+doccli (admin)> list
+Contents of current directory 'projects':
+  📁 2024/ (ID: 5)
+  📄 report.pdf - Available
+
+# Clean up and exit
+doccli (admin)> logout
+Logged out successfully!
+Current directory reset to root
+```
+
+## Terminal Session Management
+
+### Independent Sessions
+- Each terminal window maintains its own session
+- Multiple users can be logged in simultaneously
+- Sessions are automatically saved and restored per terminal
+- Directory state resets to root on logout/exit
+
+### Session Files
+```
+cli/sessions/
+├── terminal_a1b2c3d4.session  # Terminal 1 session
+├── terminal_e5f6g7h8.session  # Terminal 2 session
+└── terminal_i9j0k1l2.session  # Terminal 3 session
+```
+
+### Multi-Terminal Example
+**Terminal 1** (admin):
+```bash
+doccli (admin)> login admin password123
+doccli (admin)> cd documents
+doccli (admin)> upload file1.pdf
+```
+
+**Terminal 2** (user1):
+```bash
+doccli (user1)> login user1 password456
+doccli (user1)> cd work
+doccli (user1)> upload file2.pdf
+```
 
 ## Installation
 
-### Option 1: Native Installation (Recommended)
-
-1. **Install dependencies**:
-   ```bash
-   cd cli
-   pip install -r requirements.txt
-   ```
-
-2. **Install globally** (optional):
-   ```bash
-   ./install.sh
-   ```
-
-### Option 2: Docker Installation
-
-1. **Build and run with Docker Compose**:
-   ```bash
-   docker-compose up -d cli
-   ```
-
-2. **Use the Docker CLI**:
-   ```bash
-   ./cli-docker.sh
-   ```
-
-## Usage
-
-### Starting the CLI
-
-**Native CLI**:
+### Native CLI
 ```bash
-# If installed globally
-doccli
+cd cli
+pip install -r requirements.txt
+chmod +x main.py
 
-# Or run directly
-python cli/main.py
+# Optional: Install globally
+./install.sh
 ```
 
-**Docker CLI**:
+### Docker CLI
 ```bash
-./cli-docker.sh
+# Use the provided script
+./run-cli-docker.sh
+
+# Or with docker-compose
+docker-compose run --rm cli
 ```
-
-### Terminal-Based Session Management
-
-Each terminal window maintains its own independent session. This means:
-
-- **Multiple Users**: Different users can be logged in simultaneously in different terminals
-- **Session Isolation**: Each terminal's session is completely separate
-- **Automatic Persistence**: Sessions are saved per terminal and restored automatically
-- **No Conflicts**: No need to logout from one terminal to login in another
-
-### Basic Commands
-
-#### Authentication
-```bash
-# Login to the system
-login admin password123
-
-# Register a new account
-register newuser user@example.com password123
-
-# Logout from current session
-logout
-
-# Check current status
-status
-```
-
-#### File Operations
-```bash
-# Upload a file
-upload /path/to/document.pdf
-
-# List all files
-list
-
-# Download a file
-download document.pdf
-
-# Download with custom output path
-download document.pdf /tmp/my_document.pdf
-
-# Delete a file
-delete document.pdf
-```
-
-#### Session Management
-```bash
-# List all active terminal sessions
-sessions
-
-# Show help
-help
-
-# Exit the CLI
-exit
-```
-
-### Multi-Terminal Usage Example
-
-**Terminal 1** (User: admin):
-```bash
-$ doccli
-doccli (a1b2c3d4)> login admin password123
-Login successful! Welcome, admin
-Terminal Session ID: a1b2c3d4
-
-doccli (a1b2c3d4)> upload document1.pdf
-File uploaded successfully! File ID: 123
-```
-
-**Terminal 2** (User: user1):
-```bash
-$ doccli
-doccli (e5f6g7h8)> login user1 password456
-Login successful! Welcome, user1
-Terminal Session ID: e5f6g7h8
-
-doccli (e5f6g7h8)> upload document2.pdf
-File uploaded successfully! File ID: 124
-```
-
-**Terminal 3** (Check sessions):
-```bash
-$ doccli
-doccli (i9j0k1l2)> sessions
-Active Terminal Sessions (2):
-  • admin (Terminal: a1b2c3d4, PID: 12345)
-    Last active: 2024-01-15T10:30:00
-  • user1 (Terminal: e5f6g7h8, PID: 12346)
-    Last active: 2024-01-15T10:35:00
-```
-
-## Session Files
-
-Sessions are stored in `cli/sessions/` with the following structure:
-```
-cli/sessions/
-├── terminal_a1b2c3d4.session  # Terminal 1 session (admin)
-├── terminal_e5f6g7h8.session  # Terminal 2 session (user1)
-└── terminal_i9j0k1l2.session  # Terminal 3 session (not logged in)
-```
-
-Each session file contains:
-- Authentication cookies
-- Username
-- Terminal session ID
-- Process ID
-- Timestamp
 
 ## Configuration
 
 ### Environment Variables
-
 - `DOCUMENT_SERVER_URL`: Backend server URL (default: `http://localhost:5001`)
 
-### Backend Requirements
-
-Make sure the Document Server backend is running:
-```bash
-docker-compose up -d backend
-```
+### Requirements
+- Python 3.7+
+- Backend service running (`docker-compose up -d`)
 
 ## Troubleshooting
 
 ### Common Issues
+1. **"Please login first" after login**: Ensure backend is running
+2. **Upload fails**: Check file path and backend status
+3. **Session not persisting**: Verify `cli/sessions/` directory permissions
 
-1. **"Please login first" after login**:
-   - Make sure the backend service is running
-   - Check that the session was saved properly
+### Session Commands
+- `sessions` - View all active terminal sessions
+- `logout` - Clear current session
+- `status` - Check login status
 
-2. **Upload fails with 400 error**:
-   - Verify the file path is correct
-   - Check file permissions
-   - Ensure the backend is running
-
-3. **Session not persisting**:
-   - Check that the `cli/sessions/` directory exists
-   - Verify write permissions
-
-### Session Management
-
-- **View all sessions**: Use `sessions` command
-- **Clear a session**: Use `logout` command
-- **Switch users**: Login in a new terminal window
-- **Session cleanup**: Sessions are automatically cleaned up on logout
-
-## Development
-
-### Project Structure
+## Project Structure
 ```
 cli/
 ├── main.py              # Main CLI entry point
 ├── core/
-│   ├── client.py        # DocumentServerCLI class
-│   └── commands.py      # Click-based commands (legacy)
-├── sessions/            # Session storage directory
-├── requirements.txt     # Python dependencies
-├── install.sh          # Global installation script
-└── README.md           # This file
-```
-
-### Running Tests
-```bash
-cd cli
-python -m pytest tests/
-```
-
-## License
-
-This project is part of the Document Server platform. 
+│   └── client.py        # DocumentServerCLI class
+├── sessions/            # Session storage
+├── requirements.txt     # Dependencies
+└── install.sh          # Installation script
+``` 
