@@ -28,14 +28,12 @@ class DocumentServerCLI:
             'User-Agent': 'DocumentServerCLI/1.0'
         })
         
-        # Session file for persistence under cli/sessions folder in current working directory
-        cli_dir = Path.cwd() / 'cli'
-        sessions_dir = cli_dir / 'sessions'
-        sessions_dir.mkdir(parents=True, exist_ok=True)
-        self.session_file = cli_dir / '.document_server_session_file'
-        
         # Generate unique session ID for this terminal
         self.session_id = self._generate_session_id()
+        
+        # Current directory tracking
+        self.current_folder_id = None
+        self.current_folder_name = None
         
         # Auto-load the session for this terminal
         self._load_terminal_session()
@@ -92,27 +90,7 @@ class DocumentServerCLI:
         """Automatically load the session for this terminal"""
         self._load_terminal_session()
     
-    def _load_session(self):
-        """Load session from file (legacy method - kept for compatibility)"""
-        # This method is now deprecated in favor of _load_terminal_session
-        self._load_terminal_session()
-    
-    def _save_session(self):
-        """Save session to file (legacy method - kept for compatibility)"""
-        # This method is now deprecated in favor of _save_terminal_session
-        pass
-    
-    def _get_session_file_for_user(self, username: str) -> Path:
-        """Get session file path for a specific user (legacy - now uses terminal sessions)"""
-        return self._get_terminal_session_file()
-    
-    def _load_session_for_user(self, username: str):
-        """Load session for a specific user (legacy - now uses terminal sessions)"""
-        return self._load_terminal_session()
-    
-    def _save_session_for_user(self, username: str):
-        """Save session for a specific user (now saves terminal session)"""
-        self._save_terminal_session(username)
+
     
     def _clear_session(self):
         """Clear current session"""
@@ -254,6 +232,12 @@ class DocumentServerCLI:
         console.print(f"[blue]Uploading file: {resolved_path.name}[/blue]")
         console.print(f"[dim]Full path: {resolved_path}[/dim]")
         
+        # Show upload destination
+        if self.current_folder_name:
+            console.print(f"[blue]Uploading to current directory: {self.current_folder_name}[/blue]")
+        else:
+            console.print(f"[blue]Uploading to root directory[/blue]")
+        
         # Prepare multipart form data
         try:
             # Read file content into memory
@@ -269,9 +253,14 @@ class DocumentServerCLI:
             from io import BytesIO
             files = {'file': (resolved_path.name, BytesIO(file_content), mime_type)}
             
+            # Add folder_id to the request if we're in a specific folder
+            data = {}
+            if self.current_folder_id is not None:
+                data['folder_id'] = self.current_folder_id
+            
             # Make the request and capture the response for debugging
             url = f"{self.base_url}/upload"
-            response = self.session.post(url, files=files)
+            response = self.session.post(url, files=files, data=data)
             
             if response.status_code == 400:
                 console.print(f"[red]Upload failed with 400 error[/red]")
@@ -289,19 +278,6 @@ class DocumentServerCLI:
         except Exception as e:
             console.print(f"[red]Error uploading file: {e}[/red]")
             return False
-    
-    def list_files(self) -> bool:
-        """List all files from the backend"""
-        if not self.is_session_valid():
-            console.print("[yellow]Please login first[/yellow]")
-            return False
-            
-        result = self._make_request('GET', '/folders')
-        if not result:
-            return False
-        
-        self._display_file_list(result.get('tree', {}))
-        return True
     
     def _display_file_list(self, folder: Dict[str, Any]):
         """Display files in a simple list"""
@@ -346,21 +322,78 @@ class DocumentServerCLI:
         
         console.print(table)
     
-    def get_file_id_by_name(self, filename: str) -> int:
-        """Find file ID by filename for the current user (searches all folders)"""
-        result = self._make_request('GET', '/folders')
-        if not result:
+    def get_file_id_by_name(self, filename: str) -> Optional[int]:
+        """Find file ID by filename for the current user"""
+        try:
+            response = self._make_request('GET', '/folders')
+            if not response or 'tree' not in response:
+                return None
+            
+            def search_file_in_tree(tree):
+                # Search files in current folder
+                for file in tree.get('files', []):
+                    if file['name'] == filename:
+                        return file['id']
+                
+                # Search in subfolders
+                for child in tree.get('children', []):
+                    result = search_file_in_tree(child)
+                    if result:
+                        return result
+                
+                return None
+            
+            return search_file_in_tree(response['tree'])
+        except Exception as e:
+            console.print(f"[red]Error finding file: {e}[/red]")
             return None
-        def search_folder(folder):
-            for file in folder.get('files', []):
-                if file['name'] == filename:
-                    return file['id']
-            for child in folder.get('children', []):
-                found = search_folder(child)
-                if found:
-                    return found
+    
+    def get_file_id_by_name_in_current_dir(self, filename: str) -> Optional[int]:
+        """Find file ID by filename, prioritizing current directory"""
+        if not self.is_session_valid():
+            console.print("[yellow]Please login first[/yellow]")
             return None
-        return search_folder(result.get('tree', {}))
+        
+        try:
+            response = self._make_request('GET', '/folders')
+            if not response or 'tree' not in response:
+                return None
+            
+            tree = response['tree']
+            
+            # If we're in a specific folder, search there first
+            if self.current_folder_name:
+                current_folder = self._find_folder_in_tree(tree, self.current_folder_name)
+                if current_folder:
+                    # Search in current folder first
+                    for file in current_folder.get('files', []):
+                        if file['name'] == filename:
+                            console.print(f"[blue]Found file '{filename}' in current directory: {self.current_folder_name}[/blue]")
+                            return file['id']
+            
+            # If not found in current directory or we're in root, search entire tree
+            def search_file_in_tree(folder_tree):
+                # Search files in current folder
+                for file in folder_tree.get('files', []):
+                    if file['name'] == filename:
+                        return file['id']
+                
+                # Search in subfolders
+                for child in folder_tree.get('children', []):
+                    result = search_file_in_tree(child)
+                    if result:
+                        return result
+                
+                return None
+            
+            file_id = search_file_in_tree(tree)
+            if file_id and self.current_folder_name:
+                console.print(f"[blue]Found file '{filename}' in different directory[/blue]")
+            return file_id
+            
+        except Exception as e:
+            console.print(f"[red]Error finding file: {e}[/red]")
+            return None
     
     def download(self, filename: str, output_path: Optional[str] = None) -> bool:
         """Download a file from the backend by filename"""
@@ -403,8 +436,14 @@ class DocumentServerCLI:
             return False
     
     def delete(self, filename: str) -> bool:
-        """Delete a file from the backend by filename"""
-        file_id = self.get_file_id_by_name(filename)
+        """Delete a file from the backend by filename (prioritizes current directory)"""
+        # Show current directory context
+        if self.current_folder_name:
+            console.print(f"[blue]Deleting from current directory: {self.current_folder_name}[/blue]")
+        else:
+            console.print(f"[blue]Deleting from root directory[/blue]")
+        
+        file_id = self.get_file_id_by_name_in_current_dir(filename)
         if not file_id:
             console.print(f"[red]File '{filename}' not found.[/red]")
             return False
@@ -433,6 +472,10 @@ class DocumentServerCLI:
             # Clear local session
             self._clear_session()
             
+            # Reset current directory to root
+            self.current_folder_id = None
+            self.current_folder_name = None
+            
             # Remove terminal-specific session file
             session_file = self._get_terminal_session_file()
             if session_file.exists():
@@ -442,6 +485,7 @@ class DocumentServerCLI:
                     pass
             
             console.print("[green]Logged out successfully![/green]")
+            console.print("[blue]Current directory reset to root[/blue]")
             return True
         except Exception as e:
             console.print(f"[red]Logout failed: {e}[/red]")
@@ -533,4 +577,348 @@ class DocumentServerCLI:
         console.print("[yellow]User switching is not available in terminal-based sessions.[/yellow]")
         console.print("[yellow]Each terminal maintains its own independent session.[/yellow]")
         console.print("[yellow]To use a different user, login in a new terminal window.[/yellow]")
-        return False 
+        return False
+    
+    def delete_folder_by_name(self, folder_name: str) -> bool:
+        """Delete a folder by name"""
+        if not self.is_session_valid():
+            console.print("[yellow]Please login first[/yellow]")
+            return False
+        
+        # Find folder ID by name
+        folder_id = self.get_folder_id_by_name(folder_name)
+        if not folder_id:
+            console.print(f"[red]Folder '{folder_name}' not found[/red]")
+            return False
+        
+        # Delete the folder using its ID
+        return self.delete_folder(folder_id)
+    
+    def delete_folder(self, folder_id: int) -> bool:
+        """Delete a folder by ID"""
+        if not self.is_session_valid():
+            console.print("[yellow]Please login first[/yellow]")
+            return False
+        
+        try:
+            response = self._make_request('DELETE', f'/folders/{folder_id}')
+            
+            if response and response.get('message') == 'Folder deleted successfully':
+                console.print(f"[green]Folder deleted successfully![/green]")
+                return True
+            else:
+                error_msg = response.get('error', 'Failed to delete folder') if response else 'Failed to delete folder'
+                console.print(f"[red]Failed to delete folder: {error_msg}[/red]")
+                return False
+        except Exception as e:
+            console.print(f"[red]Error deleting folder: {e}[/red]")
+            return False
+    
+    def show_folder_tree(self) -> bool:
+        """Show folder tree structure"""
+        if not self.is_session_valid():
+            console.print("[yellow]Please login first[/yellow]")
+            return False
+        
+        try:
+            response = self._make_request('GET', '/folders')
+            
+            if response and 'tree' in response:
+                tree = response['tree']
+                self._display_folder_tree(tree)
+                return True
+            else:
+                console.print("[red]Failed to retrieve folder tree[/red]")
+                return False
+        except Exception as e:
+            console.print(f"[red]Error showing folder tree: {e}[/red]")
+            return False
+    
+    def _display_folder_tree(self, folder, level=0):
+        """Recursively display folder tree"""
+        indent = "  " * level
+        if folder.get('id'):
+            console.print(f"{indent}📁 {folder['name']} (ID: {folder['id']})")
+            
+            # Show files in this folder
+            for file in folder.get('files', []):
+                file_indent = "  " * (level + 1)
+                status = "📋" if file.get('is_under_review') else "📄"
+                console.print(f"{file_indent}{status} {file['name']}")
+            
+            # Show subfolders
+            for child in folder.get('children', []):
+                self._display_folder_tree(child, level + 1)
+        else:
+            console.print(f"{indent}📁 Root")
+    
+    def change_directory(self, folder_name: str) -> bool:
+        """Change current directory context"""
+        if not self.is_session_valid():
+            console.print("[yellow]Please login first[/yellow]")
+            return False
+        
+        # Handle special cases
+        if folder_name == "/" or folder_name == "root":
+            self.current_folder_id = None
+            self.current_folder_name = None
+            console.print("[green]Changed to root directory[/green]")
+            return True
+        
+        # Find folder ID by name
+        folder_id = self.get_folder_id_by_name(folder_name)
+        if folder_id:
+            self.current_folder_id = folder_id
+            self.current_folder_name = folder_name
+            console.print(f"[green]Changed to folder: {folder_name}[/green]")
+            return True
+        else:
+            console.print(f"[red]Folder '{folder_name}' not found[/red]")
+            return False
+    
+    def show_current_directory(self) -> bool:
+        """Show current directory path"""
+        if not self.is_session_valid():
+            console.print("[yellow]Please login first[/yellow]")
+            return False
+        
+        if self.current_folder_name:
+            console.print(f"[cyan]Current directory: /{self.current_folder_name}[/cyan]")
+        else:
+            console.print("[cyan]Current directory: / (root)[/cyan]")
+        return True
+    
+    def list_files_in_folder(self, folder_name: str = None) -> bool:
+        """List files and folders in a specific folder or current directory"""
+        if not self.is_session_valid():
+            console.print("[yellow]Please login first[/yellow]")
+            return False
+        
+        try:
+            response = self._make_request('GET', '/folders')
+            
+            if response and 'tree' in response:
+                tree = response['tree']
+                
+                if folder_name:
+                    # Find specific folder
+                    folder = self._find_folder_in_tree(tree, folder_name)
+                    if folder:
+                        console.print(f"[cyan]Contents of folder '{folder_name}':[/cyan]")
+                        self._display_folder_contents(folder)
+                    else:
+                        console.print(f"[red]Folder '{folder_name}' not found[/red]")
+                        return False
+                else:
+                    # Use current directory context
+                    if self.current_folder_name:
+                        folder = self._find_folder_in_tree(tree, self.current_folder_name)
+                        if folder:
+                            console.print(f"[cyan]Contents of current directory '{self.current_folder_name}':[/cyan]")
+                            self._display_folder_contents(folder)
+                        else:
+                            console.print(f"[red]Current directory '{self.current_folder_name}' not found[/red]")
+                            return False
+                    else:
+                        # Show all files and folders in root
+                        console.print("[cyan]Contents of root directory:[/cyan]")
+                        self._display_folder_contents(tree)
+                
+                return True
+            else:
+                console.print("[red]Failed to retrieve folders[/red]")
+                return False
+        except Exception as e:
+            console.print(f"[red]Error listing files: {e}[/red]")
+            return False
+    
+    def _display_folder_contents(self, folder: Dict[str, Any]):
+        """Display files and folders in a folder"""
+        items = []
+        
+        # Add subfolders
+        for child in folder.get('children', []):
+            items.append({
+                'type': 'folder',
+                'name': child['name'],
+                'id': child['id']
+            })
+        
+        # Add files
+        for file in folder.get('files', []):
+            items.append({
+                'type': 'file',
+                'name': file['name'],
+                'id': file['id'],
+                'status': 'Under Review' if file.get('is_under_review') else 'Available'
+            })
+        
+        if not items:
+            console.print("[yellow]No files or folders found[/yellow]")
+            return
+        
+        # Sort items: folders first, then files
+        items.sort(key=lambda x: (x['type'] != 'folder', x['name'].lower()))
+        
+        # Display items
+        for item in items:
+            if item['type'] == 'folder':
+                console.print(f"  📁 {item['name']}/ (ID: {item['id']})")
+            else:
+                status_icon = "📋" if item['status'] == 'Under Review' else "📄"
+                console.print(f"  {status_icon} {item['name']} - {item['status']}")
+    
+    def _find_folder_in_tree(self, tree, folder_name: str):
+        """Find a folder by name in the tree structure"""
+        if tree.get('name') == folder_name:
+            return tree
+        
+        for child in tree.get('children', []):
+            result = self._find_folder_in_tree(child, folder_name)
+            if result:
+                return result
+        
+        return None
+    
+    def move_file(self, filename: str, folder_name: str) -> bool:
+        """Move a file to a different folder"""
+        if not self.is_session_valid():
+            console.print("[yellow]Please login first[/yellow]")
+            return False
+        
+        try:
+            # Get file ID
+            file_id = self.get_file_id_by_name(filename)
+            if not file_id:
+                console.print(f"[red]File '{filename}' not found[/red]")
+                return False
+            
+            # Get folder ID
+            folder_id = self.get_folder_id_by_name(folder_name)
+            if not folder_id:
+                console.print(f"[red]Folder '{folder_name}' not found[/red]")
+                return False
+            
+            # Move the file
+            data = {
+                'file_id': file_id,
+                'target_folder_id': folder_id
+            }
+            
+            response = self._make_request('POST', '/move-file', json=data)
+            
+            if response and response.get('message') == 'File moved successfully':
+                console.print(f"[green]File '{filename}' moved to folder '{folder_name}' successfully![/green]")
+                return True
+            else:
+                error_msg = response.get('error', 'Failed to move file') if response else 'Failed to move file'
+                console.print(f"[red]Failed to move file: {error_msg}[/red]")
+                return False
+        except Exception as e:
+            console.print(f"[red]Error moving file: {e}[/red]")
+            return False
+    
+    def list_folders(self) -> bool:
+        """List all folders in a flat structure"""
+        if not self.is_session_valid():
+            console.print("[yellow]Please login first[/yellow]")
+            return False
+        
+        try:
+            response = self._make_request('GET', '/folders')
+            
+            if response and 'flat' in response:
+                folders = response['flat']
+                
+                if not folders:
+                    console.print("[yellow]No folders found[/yellow]")
+                    return True
+                
+                table = Table(title="Folders")
+                table.add_column("ID", style="cyan", no_wrap=True)
+                table.add_column("Name", style="green")
+                
+                for folder in folders:
+                    table.add_row(
+                        str(folder['id']),
+                        folder['name']
+                    )
+                
+                console.print(table)
+                return True
+            else:
+                console.print("[red]Failed to retrieve folders[/red]")
+                return False
+        except Exception as e:
+            console.print(f"[red]Error listing folders: {e}[/red]")
+            return False
+    
+    def create_folder(self, folder_name: str, parent_id: Optional[int] = None) -> bool:
+        """Create a new folder"""
+        if not self.is_session_valid():
+            console.print("[yellow]Please login first[/yellow]")
+            return False
+        
+        if not folder_name or not folder_name.strip():
+            console.print("[red]Folder name cannot be empty[/red]")
+            return False
+        
+        try:
+            payload = {'name': folder_name.strip()}
+            
+            # If no parent_id specified, use current folder
+            if parent_id is None:
+                if self.current_folder_id is not None:
+                    payload['parent_id'] = self.current_folder_id
+                    console.print(f"[blue]Creating folder in current directory: {self.current_folder_name}[/blue]")
+                # If current_folder_id is None, folder will be created in root (no parent_id)
+            else:
+                payload['parent_id'] = parent_id
+            
+            response = self._make_request('POST', '/folders', json=payload)
+            
+            if response and response.get('message') == 'Folder created':
+                folder_id = response.get('folder_id', 'N/A')
+                console.print(f"[green]Folder '{folder_name}' created successfully![/green]")
+                console.print(f"[blue]Folder ID: {folder_id}[/blue]")
+                return True
+            else:
+                error_msg = response.get('error', 'Failed to create folder') if response else 'Failed to create folder'
+                console.print(f"[red]Failed to create folder: {error_msg}[/red]")
+                return False
+        except Exception as e:
+            console.print(f"[red]Error creating folder: {e}[/red]")
+            return False
+    
+    def get_folder_id_by_name(self, folder_name: str) -> Optional[int]:
+        """Get folder ID by name (searches entire folder tree)"""
+        if not self.is_session_valid():
+            console.print("[yellow]Please login first[/yellow]")
+            return None
+        
+        try:
+            response = self._make_request('GET', '/folders')
+            
+            if response and 'tree' in response:
+                tree = response['tree']
+                
+                # Search in the entire tree structure
+                def search_folder_in_tree(folder_tree):
+                    if folder_tree.get('name') == folder_name:
+                        return folder_tree.get('id')
+                    
+                    # Search in subfolders
+                    for child in folder_tree.get('children', []):
+                        result = search_folder_in_tree(child)
+                        if result:
+                            return result
+                    
+                    return None
+                
+                return search_folder_in_tree(tree)
+            else:
+                console.print("[red]Failed to retrieve folders[/red]")
+                return None
+        except Exception as e:
+            console.print(f"[red]Error getting folder ID: {e}[/red]")
+            return None 

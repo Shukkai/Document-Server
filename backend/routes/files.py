@@ -118,16 +118,34 @@ def delete_file(file_id):
     if rec.owner_id != current_user.id and not current_user.is_admin:
         return {"error": "Access denied"}, 403
 
+    current_app.logger.info(f"Deleting file {file_id}: {rec.filename}")
+
     try:
-        # Delete the file from disk first
+        # Delete the main file from disk
         if os.path.exists(rec.path):
             os.remove(rec.path)
-            current_app.logger.info(f"Deleted file from disk: {rec.path}")
+            current_app.logger.info(f"Deleted main file from disk: {rec.path}")
+        else:
+            current_app.logger.warning(f"Main file not found on disk: {rec.path}")
         
-        # Delete the file record - this will cascade delete all related versions
-        # due to the cascade relationship we just added
+        # Delete all version files
+        versions = FileVersion.query.filter_by(file_id=file_id).all()
+        for version in versions:
+            try:
+                if os.path.exists(version.path):
+                    os.remove(version.path)
+                    current_app.logger.info(f"Deleted version file: {version.path}")
+                else:
+                    current_app.logger.warning(f"Version file not found on disk: {version.path}")
+            except Exception as e:
+                current_app.logger.error(f"Error deleting version file {version.path}: {e}")
+            db.session.delete(version)
+        
+        # Delete the file record from database
         db.session.delete(rec)
         db.session.commit()
+        
+        current_app.logger.info(f"Successfully deleted file {file_id} and all versions")
         
         return {
             "message": "File deleted successfully.",

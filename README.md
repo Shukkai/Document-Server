@@ -60,11 +60,14 @@
 
 ### CLI Tool
 
-- Command-line interface for server management
-- Secure password authentication
-- File upload, download, list, and delete operations
-- Rich terminal UI with progress indicators
-- Docker integration for easy deployment
+- **Terminal-based session management** with independent sessions per terminal
+- **Directory navigation** with `cd`, `pwd`, `ls` commands like traditional file systems
+- **Context-aware operations** - upload, mkdir, delete use current directory by default
+- **Folder management** - create, list, delete, and navigate folders
+- **File operations** - upload, download, list, delete with smart search
+- **Rich terminal UI** with progress indicators and formatted output
+- **Interactive mode** with built-in help system
+- **Docker integration** for easy deployment
 
 ### Database (MySQL)
 
@@ -117,7 +120,7 @@ cd k8s
 
 ## CLI Usage
 
-The Document Center includes a modular command-line interface for server management, available in two flavors:
+The Document Center includes a powerful command-line interface with terminal-based session management, available in two flavors:
 
 ### Option 1: Native CLI (Recommended)
 
@@ -141,10 +144,13 @@ pip3 install -r requirements.txt
 # Make scripts executable
 chmod +x install.sh run.sh main.py
 
-# Install locally
+# Install globally (optional)
 ./install.sh
 
-# Use the CLI
+# Use the CLI interactively
+python3 main.py
+
+# Or run commands directly
 python3 main.py login admin admin123
 python3 main.py list
 python3 main.py upload /Users/username/Downloads/file.pdf
@@ -203,26 +209,109 @@ docker-compose run --rm cli delete myfile.txt
 
 ### CLI Commands
 
+#### Authentication
 | Command | Description |
 |---------|-------------|
 | `login <username> <password>` | Login to the server |
 | `register <username> <email> <password> [grade]` | Register a new account |
 | `logout` | Logout and clear session |
-| `list` | List all files in the server |
-| `upload <file_path>` | Upload a file to the server |
-| `download <filename> [output_path]` | Download a file by filename |
-| `delete <filename>` | Delete a file by filename |
 | `status` | Show current login status |
+
+#### File Operations
+| Command | Description |
+|---------|-------------|
+| `list [folder_name]` | List all files or files in specific folder |
+| `ls [folder_name]` | List files and folders in specific folder (alias for list) |
+| `upload <file_path>` | Upload a file (to current directory by default) |
+| `download <filename> [output_path]` | Download a file by filename |
+| `delete <filename>` | Delete a file (from current directory by default) |
+
+#### Folder Operations
+| Command | Description |
+|---------|-------------|
+| `mkdir <folder_name> [parent_id]` | Create a new folder (in current directory by default) |
+| `folders` | List all folders |
+| `rmdir <folder_name>` | Delete a folder by name |
+| `tree` | Show folder tree structure |
+| `cd <folder_name>` | Change current folder context |
+| `pwd` | Show current folder path |
+| `mv <filename> <folder_name>` | Move file to different folder |
+
+#### Session Management
+| Command | Description |
+|---------|-------------|
+| `sessions` | List all terminal sessions |
+| `help` | Show help message |
+| `exit` | Exit the CLI |
 
 ### CLI Features
 
-- **Session Persistence**: Login sessions are maintained between commands
-- **Filename-based Operations**: Use filenames instead of IDs for download/delete
-- **Rich Terminal UI**: Beautiful progress indicators and formatted output
-- **Interactive Mode**: Run without arguments to see help and status
-- **Cross-platform**: Works on macOS, Linux, and Windows
+#### Terminal-Based Session Management
+- **Independent Sessions**: Each terminal maintains its own session
+- **Multiple Users**: Different users can be logged in simultaneously in different terminals
+- **Session Persistence**: Sessions are automatically saved and restored per terminal
+- **Clean State**: Directory resets to root on logout/exit
 
-For detailed CLI documentation, see [cli/README.md](cli/README.md).
+#### Directory Navigation
+- **Current Directory Tracking**: CLI remembers your current folder
+- **Intuitive Commands**: `cd`, `pwd`, `ls` work like traditional file systems
+- **Context-Aware Operations**: `upload`, `mkdir`, `delete` use current directory by default
+- **Folder Hierarchy**: Navigate through nested folders with `cd`
+
+#### Enhanced File Management
+- **Smart File Search**: Commands prioritize current directory, fall back to global search
+- **Folder Support**: Create, list, and manage folders
+- **File Organization**: Move files between folders
+- **Tree View**: Visual folder hierarchy display
+
+#### Rich Terminal Experience
+- **Beautiful UI**: Rich terminal formatting with colors and icons
+- **Progress Indicators**: Visual feedback for uploads/downloads
+- **Interactive Mode**: Run without arguments for interactive shell
+- **Help System**: Built-in help and examples
+
+### Example Workflow
+
+```bash
+# Start interactive CLI
+doccli
+
+# Login and explore
+doccli (admin)> login admin admin123
+doccli (admin)> list
+doccli (admin)> tree
+
+# Create and navigate folders
+doccli (admin)> mkdir documents
+doccli (admin)> cd documents
+doccli (admin)> pwd
+Current directory: /documents
+
+# Upload files to current directory
+doccli (admin)> upload /path/to/report.pdf
+Uploading to current directory: documents
+File uploaded successfully!
+
+# List contents with folders
+doccli (admin)> ls
+Contents of current directory 'documents':
+  📁 projects/ (ID: 4)
+  📄 report.pdf - Available
+
+# Navigate and manage
+doccli (admin)> cd projects
+doccli (admin)> mkdir 2024
+doccli (admin)> mv report.pdf 2024/
+doccli (admin)> list
+Contents of current directory 'projects':
+  📁 2024/ (ID: 5)
+  📄 report.pdf - Available
+
+# Clean up and exit
+doccli (admin)> logout
+Logged out successfully!
+Current directory reset to root
+```
 
 ### Installation
 
@@ -231,10 +320,10 @@ The CLI automatically installs its dependencies when first run. If you encounter
 
 ```bash
 # Install dependencies manually
-pip3 install -r requirements-cli.txt
+pip3 install -r requirements.txt
 
 # Make the CLI executable
-chmod +x doccli.py
+chmod +x main.py
 ```
 
 #### Docker CLI
@@ -254,8 +343,8 @@ You can also run the CLI directly:
 
 ```bash
 # Native CLI
-python3 doccli.py login admin admin123
-python3 doccli.py
+python3 main.py login admin admin123
+python3 main.py
 
 # Docker CLI
 docker-compose run --rm cli login admin admin123

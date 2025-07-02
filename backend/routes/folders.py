@@ -134,8 +134,75 @@ def delete_folder(fid):
         return {"error": "Access denied"}, 403
     if fld.parent_id is None:
         return {"error": "Cannot delete root folder"}, 400
-    db.session.delete(fld); db.session.commit()
-    return {"message": "Folder deleted"}
+    
+    current_app.logger.info(f"Deleting folder {fld.id} '{fld.name}' with all contents")
+    
+    try:
+        # Recursively delete all files and subfolders
+        def delete_folder_recursive(folder):
+            """Recursively delete a folder and all its contents"""
+            current_app.logger.info(f"Processing folder: {folder.name} (ID: {folder.id})")
+            
+            # Delete all files in this folder
+            for file in folder.files:
+                try:
+                    current_app.logger.info(f"Deleting file: {file.filename} at {file.path}")
+                    if os.path.exists(file.path):
+                        os.remove(file.path)
+                        current_app.logger.info(f"Successfully deleted file from disk: {file.path}")
+                    else:
+                        current_app.logger.warning(f"File not found on disk: {file.path}")
+                    
+                    # Delete file versions
+                    from ..models import FileVersion
+                    versions = FileVersion.query.filter_by(file_id=file.id).all()
+                    for version in versions:
+                        try:
+                            if os.path.exists(version.path):
+                                os.remove(version.path)
+                                current_app.logger.info(f"Deleted version file: {version.path}")
+                        except Exception as e:
+                            current_app.logger.error(f"Error deleting version file {version.path}: {e}")
+                        db.session.delete(version)
+                    
+                    db.session.delete(file)
+                    current_app.logger.info(f"Deleted file record: {file.filename}")
+                    
+                except Exception as e:
+                    current_app.logger.error(f"Error deleting file {file.id}: {str(e)}")
+            
+            # Recursively delete all subfolders
+            for subfolder in folder.subfolders:
+                delete_folder_recursive(subfolder)
+            
+            # Delete the physical folder
+            folder_path = folder_disk_path(folder, current_user.username)
+            if os.path.exists(folder_path):
+                try:
+                    shutil.rmtree(folder_path)
+                    current_app.logger.info(f"Successfully deleted physical folder: {folder_path}")
+                except Exception as e:
+                    current_app.logger.error(f"Error deleting physical folder {folder_path}: {e}")
+            else:
+                current_app.logger.warning(f"Physical folder not found: {folder_path}")
+            
+            # Delete from database
+            db.session.delete(folder)
+            current_app.logger.info(f"Deleted folder record: {folder.name}")
+        
+        # Start recursive deletion
+        delete_folder_recursive(fld)
+        
+        # Commit all changes
+        db.session.commit()
+        current_app.logger.info(f"Successfully deleted folder {fld.id} '{fld.name}' and all contents")
+        
+        return {"message": "Folder deleted successfully"}
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error deleting folder {fld.id}: {str(e)}")
+        return {"error": f"Failed to delete folder: {str(e)}"}, 500
 
 
 @bp.route('/move-file', methods=['POST'])
@@ -196,4 +263,84 @@ def move_file():
     rec.path      = new_path
     db.session.commit()
 
-    return {"message": "File moved successfully"}, 200 
+    return {"message": "File moved successfully"}, 200
+
+
+@bp.route('/cleanup-orphaned-files', methods=['POST'])
+@login_required
+def cleanup_orphaned_files():
+    """Clean up orphaned files and folders that exist on disk but not in the database"""
+    if not current_user.is_admin:
+        return {"error": "Admin access required"}, 403
+    
+    current_app.logger.info("Starting orphaned files cleanup")
+    
+    try:
+        from ..config import Config
+        upload_folder = Config.UPLOAD_FOLDER
+        
+        if not os.path.exists(upload_folder):
+            return {"message": "Upload folder does not exist"}, 404
+        
+        cleaned_files = 0
+        cleaned_folders = 0
+        
+        # Get all files in database
+        db_files = set()
+        for file in File.query.all():
+            if os.path.exists(file.path):
+                db_files.add(file.path)
+        
+        # Get all version files in database
+        db_versions = set()
+        from ..models import FileVersion
+        for version in FileVersion.query.all():
+            if os.path.exists(version.path):
+                db_versions.add(version.path)
+        
+        # Walk through upload folder and find orphaned files
+        for root, dirs, files in os.walk(upload_folder):
+            # Check files
+            for file in files:
+                file_path = os.path.join(root, file)
+                if file_path not in db_files and file_path not in db_versions:
+                    try:
+                        os.remove(file_path)
+                        current_app.logger.info(f"Cleaned orphaned file: {file_path}")
+                        cleaned_files += 1
+                    except Exception as e:
+                        current_app.logger.error(f"Error cleaning orphaned file {file_path}: {e}")
+            
+            # Check folders (but skip .version folders)
+            for dir_name in dirs:
+                if dir_name == '.version':
+                    continue
+                    
+                dir_path = os.path.join(root, dir_name)
+                # Check if this folder exists in database
+                folder_exists = False
+                for folder in Folder.query.all():
+                    folder_disk_path_val = folder_disk_path(folder, folder.owner.username)
+                    if folder_disk_path_val == dir_path:
+                        folder_exists = True
+                        break
+                
+                if not folder_exists:
+                    try:
+                        shutil.rmtree(dir_path)
+                        current_app.logger.info(f"Cleaned orphaned folder: {dir_path}")
+                        cleaned_folders += 1
+                    except Exception as e:
+                        current_app.logger.error(f"Error cleaning orphaned folder {dir_path}: {e}")
+        
+        current_app.logger.info(f"Cleanup completed: {cleaned_files} files, {cleaned_folders} folders")
+        
+        return {
+            "message": "Cleanup completed successfully",
+            "cleaned_files": cleaned_files,
+            "cleaned_folders": cleaned_folders
+        }, 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error during cleanup: {str(e)}")
+        return {"error": f"Cleanup failed: {str(e)}"}, 500 

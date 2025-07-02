@@ -24,6 +24,11 @@ console = Console()
 def signal_handler(signum, frame):
     """Handle termination signals gracefully"""
     console.print("\n[yellow]Received termination signal. Cleaning up...[/yellow]")
+    # Reset current directory to root
+    if 'client' in globals():
+        client.current_folder_id = None
+        client.current_folder_name = None
+        console.print("[blue]Current directory reset to root[/blue]")
     sys.exit(0)
 
 def show_welcome():
@@ -49,10 +54,20 @@ def show_help():
   status                          - Show current login status
 
 [green]File Operations:[/green]
-  upload <file_path>              - Upload a file
-  list                            - List all files
+  upload <file_path>              - Upload a file (to current directory by default)
+  list [folder_name]              - List all files or files in specific folder
   download <filename> [output]    - Download a file
-  delete <filename>               - Delete a file
+  delete <filename>               - Delete a file (from current directory by default)
+
+[green]Folder Operations:[/green]
+  mkdir <folder_name> [parent_id] - Create a new folder (in current directory by default)
+  folders                         - List all folders
+  rmdir <folder_name>             - Delete a folder by name
+  tree                            - Show folder tree structure
+  cd <folder_name>                - Change current folder context
+  pwd                             - Show current folder path
+  ls [folder_name]                - List files and folders in specific folder (alias for list)
+  mv <filename> <folder_name>     - Move file to different folder
 
 [green]Session Management:[/green]
   sessions                        - List all terminal sessions
@@ -61,7 +76,9 @@ def show_help():
 
 [green]Examples:[/green]
   login admin password123
+  mkdir documents
   upload /path/to/document.pdf
+  mv document.pdf documents/
   list
   download document.pdf
   logout
@@ -81,6 +98,7 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
     
     # Initialize client
+    global client
     client = DocumentServerCLI()
     
     # Show welcome message
@@ -141,7 +159,8 @@ def main():
                 client.upload(file_path)
                 
             elif cmd == 'list':
-                client.list_files()
+                folder_name = args[0] if len(args) > 0 else None
+                client.list_files_in_folder(folder_name)
                 
             elif cmd == 'download':
                 if len(args) < 1:
@@ -158,6 +177,49 @@ def main():
                 filename = args[0]
                 client.delete(filename)
                 
+            elif cmd == 'mkdir':
+                if len(args) < 1:
+                    console.print("[red]Usage: mkdir <folder_name> [parent_folder_id][/red]")
+                    continue
+                folder_name = args[0]
+                parent_id = int(args[1]) if len(args) > 1 else None
+                client.create_folder(folder_name, parent_id)
+                
+            elif cmd == 'folders':
+                client.list_folders()
+                
+            elif cmd == 'rmdir':
+                if len(args) < 1:
+                    console.print("[red]Usage: rmdir <folder_name>[/red]")
+                    continue
+                folder_name = args[0]
+                client.delete_folder_by_name(folder_name)
+                
+            elif cmd == 'tree':
+                client.show_folder_tree()
+                
+            elif cmd == 'cd':
+                if len(args) < 1:
+                    console.print("[red]Usage: cd <folder_name>[/red]")
+                    continue
+                folder_name = args[0]
+                client.change_directory(folder_name)
+                
+            elif cmd == 'pwd':
+                client.show_current_directory()
+                
+            elif cmd == 'ls':
+                folder_name = args[0] if len(args) > 0 else None
+                client.list_files_in_folder(folder_name)
+                
+            elif cmd == 'mv':
+                if len(args) < 2:
+                    console.print("[red]Usage: mv <filename> <folder_name>[/red]")
+                    continue
+                filename = args[0]
+                folder_name = args[1]
+                client.move_file(filename, folder_name)
+                
             elif cmd == 'sessions':
                 sessions = client.list_sessions()
                 if not sessions:
@@ -173,6 +235,10 @@ def main():
                 show_help()
                 
             elif cmd in ['exit', 'quit']:
+                # Reset current directory to root before exiting
+                client.current_folder_id = None
+                client.current_folder_name = None
+                console.print("[blue]Current directory reset to root[/blue]")
                 console.print("[green]Goodbye![/green]")
                 break
                 

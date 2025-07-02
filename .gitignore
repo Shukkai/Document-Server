@@ -23,5 +23,6 @@ htmlcov/
 # CLI session files
 cli/sessions/*.session
 cli/.session_*
+cli/cli/*
 
 simple.txt
