@@ -26,5 +26,5 @@ ENV DOCUMENT_SERVER_URL=http://backend:5001
 RUN useradd -m -u 1000 cliuser && chown -R cliuser:cliuser /app
 USER cliuser
 
-# Default command
-ENTRYPOINT ["python3", "main.py"] 
+# Default command (can be overridden by docker-compose)
+CMD ["python3", "main.py"] 

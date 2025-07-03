@@ -89,7 +89,7 @@ services:
     volumes:
       - .:/workspace
       - ./cli:/app/cli
-    working_dir: /workspace
+    working_dir: /app
     environment:
       - DOCUMENT_SERVER_URL=http://backend:5001
     depends_on:

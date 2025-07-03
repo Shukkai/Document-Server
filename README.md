@@ -134,16 +134,20 @@ The Document Center includes a powerful command-line interface with terminal-bas
 
 ### Quick Start
 
-**Native CLI (Recommended)**:
+**Native CLI (Recommended for development)**:
 ```bash
 cd cli
 pip install -r requirements.txt
 python main.py
 ```
 
-**Docker CLI**:
+**Docker CLI (Recommended for production)**:
 ```bash
-./run-cli-docker.sh
+# From project root
+./run-cli.sh
+
+# Or with docker-compose directly
+docker-compose run --rm cli
 ```
 
 ### Key Features
@@ -167,6 +171,10 @@ python main.py
 ### Example Workflow
 
 ```bash
+# Start CLI
+./run-cli.sh
+
+# Login and explore
 doccli (admin)> login admin admin123
 doccli (admin)> mkdir documents
 doccli (admin)> cd documents

@@ -13,16 +13,20 @@ A powerful command-line interface with **terminal-based session management** and
 
 ## Quick Start
 
-### Native CLI (Recommended)
+### Native CLI (Recommended for development)
 ```bash
 cd cli
 pip install -r requirements.txt
 python main.py
 ```
 
-### Docker CLI
+### Docker CLI (Recommended for production)
 ```bash
-./run-cli-docker.sh
+# From project root
+./run-cli.sh
+
+# Or with docker-compose directly
+docker-compose run --rm cli
 ```
 
 ## Commands
@@ -65,8 +69,8 @@ python main.py
 ## Example Workflow
 
 ```bash
-# Start interactive CLI
-doccli
+# Start CLI
+./run-cli.sh
 
 # Login and explore
 doccli (admin)> login admin admin123
@@ -150,11 +154,15 @@ chmod +x main.py
 
 ### Docker CLI
 ```bash
-# Use the provided script
-./run-cli-docker.sh
+# From project root (recommended)
+./run-cli.sh
 
-# Or with docker-compose
+# Or with docker-compose directly
 docker-compose run --rm cli
+
+# Or from CLI directory
+cd cli
+./run.sh
 ```
 
 ## Configuration
@@ -163,7 +171,8 @@ docker-compose run --rm cli
 - `DOCUMENT_SERVER_URL`: Backend server URL (default: `http://localhost:5001`)
 
 ### Requirements
-- Python 3.7+
+- Python 3.7+ (for native CLI)
+- Docker and Docker Compose (for Docker CLI)
 - Backend service running (`docker-compose up -d`)
 
 ## Troubleshooting
@@ -172,6 +181,7 @@ docker-compose run --rm cli
 1. **"Please login first" after login**: Ensure backend is running
 2. **Upload fails**: Check file path and backend status
 3. **Session not persisting**: Verify `cli/sessions/` directory permissions
+4. **Docker CLI not working**: Make sure backend services are running
 
 ### Session Commands
 - `sessions` - View all active terminal sessions
@@ -183,8 +193,16 @@ docker-compose run --rm cli
 cli/
 ├── main.py              # Main CLI entry point
 ├── core/
-│   └── client.py        # DocumentServerCLI class
+│   ├── client.py        # Thin orchestrator
+│   ├── session.py       # Authentication & sessions
+│   ├── files.py         # File operations
+│   ├── folders.py       # Folder operations
+│   └── commands.py      # Command definitions
 ├── sessions/            # Session storage
 ├── requirements.txt     # Dependencies
+├── run.sh              # Native CLI runner
 └── install.sh          # Installation script
+
+# Root level
+run-cli.sh              # Docker CLI runner (uses docker-compose)
 ``` 
